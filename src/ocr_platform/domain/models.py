@@ -8,6 +8,7 @@ carries provenance through its parent page/document.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated
@@ -143,8 +144,192 @@ class VerificationReason(StrEnum):
     RETRY_EXHAUSTED = "retry_exhausted"
     CONSENSUS_ACROSS_VARIANTS = "consensus_across_variants"
     CONSENSUS_ACROSS_BACKENDS = "consensus_across_backends"
+    STABLE_ACROSS_VARIANTS = "stable_across_variants"
+    INDEPENDENT_BACKEND_CONSENSUS = "independent_backend_consensus"
+    CORRELATED_EVIDENCE_ONLY = "correlated_evidence_only"
     BACKEND_FAILURE = "backend_failure"
     STORAGE_FAILURE = "storage_failure"
+
+
+_REVIEW_STATUSES = frozenset(
+    {
+        VerificationStatus.UNCERTAIN,
+        VerificationStatus.HUMAN_REVIEW_REQUIRED,
+        VerificationStatus.FAILED,
+    }
+)
+_NON_BLOCKING_RETRY_FLAGS = frozenset(
+    {ReviewFlag.LOW_CONFIDENCE, ReviewFlag.TINY_TEXT}
+)
+_ALWAYS_BLOCKING_REVIEW_FLAGS = frozenset(set(ReviewFlag) - _NON_BLOCKING_RETRY_FLAGS)
+_ALWAYS_BLOCKING_REASONS = frozenset(
+    {
+        VerificationReason.BACKEND_DISAGREEMENT,
+        VerificationReason.NORMALIZED_DISAGREEMENT,
+        VerificationReason.DIGIT_DISAGREEMENT,
+        VerificationReason.PUNCTUATION_DIFFERENCE,
+        VerificationReason.CONFIDENCE_SCALE_MISMATCH,
+        VerificationReason.EMPTY_TEXT,
+        VerificationReason.SHORT_TEXT,
+        VerificationReason.SUSPICIOUS_CHARACTERS,
+        VerificationReason.LANGUAGE_SCRIPT_MISMATCH,
+        VerificationReason.EXPECTED_FORMAT_MISMATCH,
+        VerificationReason.LOW_IMAGE_QUALITY,
+        VerificationReason.RETRY_EXHAUSTED,
+        VerificationReason.BACKEND_FAILURE,
+        VerificationReason.STORAGE_FAILURE,
+    }
+)
+
+
+def _has_independent_consensus(reason_codes: Iterable[VerificationReason]) -> bool:
+    return VerificationReason.INDEPENDENT_BACKEND_CONSENSUS in set(reason_codes)
+
+
+def _requires_review_state(
+    status: VerificationStatus,
+    needs_review: bool,
+    flags: Iterable[ReviewFlag],
+    reason_codes: Iterable[VerificationReason],
+    *,
+    tiny_text: bool = False,
+) -> bool:
+    """Return whether the current evidence must stay out of clean exports.
+
+    A verified low-confidence/tiny-text result is allowed only when the
+    verification engine recorded independent consensus.  Other uncertainty
+    flags and unresolved reason codes remain blocking.  This keeps retry
+    metadata auditable without turning every benign high-quality retry into a
+    human-review item.
+    """
+
+    normalized_flags = set(flags)
+    normalized_reasons = set(reason_codes)
+    independent = _has_independent_consensus(normalized_reasons)
+    if needs_review or status in _REVIEW_STATUSES:
+        return True
+    if normalized_flags & _ALWAYS_BLOCKING_REVIEW_FLAGS:
+        return True
+    if normalized_flags & _NON_BLOCKING_RETRY_FLAGS and not (
+        status is VerificationStatus.VERIFIED and independent
+    ):
+        return True
+    if tiny_text and not (status is VerificationStatus.VERIFIED and independent):
+        return True
+    if normalized_reasons & _ALWAYS_BLOCKING_REASONS:
+        return True
+    if VerificationReason.LOW_PRIMARY_CONFIDENCE in normalized_reasons and not (
+        status is VerificationStatus.VERIFIED and independent
+    ):
+        return True
+    if VerificationReason.TINY_TEXT in normalized_reasons and not (
+        status is VerificationStatus.VERIFIED and independent
+    ):
+        return True
+    return status is VerificationStatus.VERIFIED and bool(
+        normalized_reasons.intersection(
+            {
+                VerificationReason.INSUFFICIENT_INDEPENDENT_EVIDENCE,
+                VerificationReason.CORRELATED_EVIDENCE_ONLY,
+                VerificationReason.INSUFFICIENT_EVIDENCE,
+            }
+        )
+    )
+
+
+def _aggregate_child_statuses(
+    statuses: Iterable[VerificationStatus],
+) -> VerificationStatus | None:
+    materialized = tuple(statuses)
+    if not materialized:
+        return None
+    for status in (
+        VerificationStatus.FAILED,
+        VerificationStatus.HUMAN_REVIEW_REQUIRED,
+        VerificationStatus.UNCERTAIN,
+    ):
+        if status in materialized:
+            return status
+    if VerificationStatus.ACCEPTED in materialized:
+        return VerificationStatus.ACCEPTED
+    return VerificationStatus.VERIFIED
+
+
+def _synchronize_parent_review_state(
+    status: VerificationStatus,
+    needs_review: bool,
+    flags: list[ReviewFlag],
+    reason_codes: list[VerificationReason],
+    children: Iterable[object],
+) -> tuple[VerificationStatus, bool, list[ReviewFlag], list[VerificationReason]]:
+    """Propagate child uncertainty without recursively revalidating models."""
+
+    own_flags = list(dict.fromkeys(flags))
+    own_reasons = list(dict.fromkeys(reason_codes))
+    child_values = tuple(children)
+    child_statuses: list[VerificationStatus] = []
+    child_requires_review = False
+    for child in child_values:
+        child_status = getattr(child, "verification_status", None)
+        if isinstance(child_status, VerificationStatus):
+            child_statuses.append(child_status)
+        child_flags = getattr(child, "uncertainty_flags", ())
+        child_reasons = getattr(child, "reason_codes", ())
+        child_needs_review = bool(getattr(child, "needs_review", False))
+        child_status_for_review = (
+            child_status
+            if isinstance(child_status, VerificationStatus)
+            else VerificationStatus.ACCEPTED
+        )
+        child_requires_review = child_requires_review or _requires_review_state(
+            child_status_for_review,
+            child_needs_review,
+            child_flags,
+            child_reasons,
+            tiny_text=bool(getattr(child, "tiny_text", False)),
+        )
+        own_flags.extend(child_flags)
+        own_reasons.extend(child_reasons)
+
+    aggregate = _aggregate_child_statuses(child_statuses)
+    synchronized_status = status
+    if aggregate is not None:
+        if aggregate is VerificationStatus.FAILED:
+            synchronized_status = VerificationStatus.FAILED
+        elif aggregate in {
+            VerificationStatus.HUMAN_REVIEW_REQUIRED,
+            VerificationStatus.UNCERTAIN,
+        } and status in {
+            VerificationStatus.ACCEPTED,
+            VerificationStatus.VERIFIED,
+        }:
+            synchronized_status = aggregate
+        elif aggregate is VerificationStatus.ACCEPTED and status is VerificationStatus.VERIFIED:
+            synchronized_status = VerificationStatus.ACCEPTED
+        elif aggregate is VerificationStatus.VERIFIED and status is VerificationStatus.ACCEPTED:
+            synchronized_status = VerificationStatus.VERIFIED
+
+    synchronized_flags = list(dict.fromkeys(own_flags))
+    synchronized_reasons = list(dict.fromkeys(own_reasons))
+    synchronized_needs_review = needs_review or child_requires_review or _requires_review_state(
+        status,
+        needs_review,
+        flags,
+        reason_codes,
+    )
+    if synchronized_status in _REVIEW_STATUSES:
+        synchronized_needs_review = True
+    if synchronized_needs_review and synchronized_status in {
+        VerificationStatus.ACCEPTED,
+        VerificationStatus.VERIFIED,
+    }:
+        synchronized_status = VerificationStatus.HUMAN_REVIEW_REQUIRED
+    return (
+        synchronized_status,
+        synchronized_needs_review,
+        synchronized_flags,
+        synchronized_reasons,
+    )
 
 
 class PolygonPoint(BaseModel):
@@ -352,16 +537,18 @@ class TableCellResult(BaseModel):
 
     @model_validator(mode="after")
     def sync_review_state(self) -> TableCellResult:
-        if self.uncertainty_flags and not self.needs_review:
-            self.needs_review = True
-        if self.verification_status in {
-            VerificationStatus.UNCERTAIN,
-            VerificationStatus.HUMAN_REVIEW_REQUIRED,
-            VerificationStatus.FAILED,
-        }:
-            self.needs_review = True
-        if self.needs_review and self.verification_status == VerificationStatus.ACCEPTED:
-            self.verification_status = VerificationStatus.HUMAN_REVIEW_REQUIRED
+        (
+            self.verification_status,
+            self.needs_review,
+            self.uncertainty_flags,
+            self.reason_codes,
+        ) = _synchronize_parent_review_state(
+            self.verification_status,
+            self.needs_review,
+            self.uncertainty_flags,
+            self.reason_codes,
+            (),
+        )
         return self
 
 
@@ -397,16 +584,18 @@ class LineResult(BaseModel):
     def sync_review_state(self) -> LineResult:
         if self.tiny_text and ReviewFlag.TINY_TEXT not in self.uncertainty_flags:
             self.uncertainty_flags.append(ReviewFlag.TINY_TEXT)
-        if self.uncertainty_flags and not self.needs_review:
-            self.needs_review = True
-        if self.verification_status in {
-            VerificationStatus.UNCERTAIN,
-            VerificationStatus.HUMAN_REVIEW_REQUIRED,
-            VerificationStatus.FAILED,
-        }:
-            self.needs_review = True
-        if self.needs_review and self.verification_status == VerificationStatus.ACCEPTED:
-            self.verification_status = VerificationStatus.HUMAN_REVIEW_REQUIRED
+        (
+            self.verification_status,
+            self.needs_review,
+            self.uncertainty_flags,
+            self.reason_codes,
+        ) = _synchronize_parent_review_state(
+            self.verification_status,
+            self.needs_review,
+            self.uncertainty_flags,
+            self.reason_codes,
+            (),
+        )
         return self
 
 
@@ -429,16 +618,18 @@ class BlockResult(BaseModel):
 
     @model_validator(mode="after")
     def sync_review_state(self) -> BlockResult:
-        if self.uncertainty_flags and not self.needs_review:
-            self.needs_review = True
-        if self.verification_status in {
-            VerificationStatus.UNCERTAIN,
-            VerificationStatus.HUMAN_REVIEW_REQUIRED,
-            VerificationStatus.FAILED,
-        }:
-            self.needs_review = True
-        if self.needs_review and self.verification_status == VerificationStatus.ACCEPTED:
-            self.verification_status = VerificationStatus.HUMAN_REVIEW_REQUIRED
+        (
+            self.verification_status,
+            self.needs_review,
+            self.uncertainty_flags,
+            self.reason_codes,
+        ) = _synchronize_parent_review_state(
+            self.verification_status,
+            self.needs_review,
+            self.uncertainty_flags,
+            self.reason_codes,
+            (*self.lines, *self.table_cells),
+        )
         return self
 
 
@@ -460,6 +651,10 @@ class PageResult(BaseModel):
     native_text_reliable: bool = False
     native_text_reason: str | None = None
     page_flags: list[ReviewFlag] = Field(default_factory=list)
+    needs_review: bool = False
+    verification_status: VerificationStatus = VerificationStatus.ACCEPTED
+    uncertainty_flags: list[ReviewFlag] = Field(default_factory=list)
+    reason_codes: list[VerificationReason] = Field(default_factory=list)
 
     def _dimensions_for(self, coordinate_space: CoordinateSpace) -> tuple[float, float] | None:
         if coordinate_space == self.coordinate_space:
@@ -507,6 +702,23 @@ class PageResult(BaseModel):
                 if cell_dimensions is not None:
                     cell.bbox.validate_within(*cell_dimensions)
                     self._validate_polygon_within(cell.polygon, *cell_dimensions)
+        return self
+
+    @model_validator(mode="after")
+    def sync_review_state(self) -> PageResult:
+        (
+            self.verification_status,
+            self.needs_review,
+            self.uncertainty_flags,
+            self.reason_codes,
+        ) = _synchronize_parent_review_state(
+            self.verification_status,
+            self.needs_review,
+            [*self.page_flags, *self.uncertainty_flags],
+            self.reason_codes,
+            self.blocks,
+        )
+        self.page_flags = list(dict.fromkeys((*self.page_flags, *self.uncertainty_flags)))
         return self
 
 
@@ -709,6 +921,9 @@ class DocumentResult(BaseModel):
     pages: list[PageResult] = Field(default_factory=list)
     processing_status: ProcessingStatus = ProcessingStatus.COMPLETED
     status: VerificationStatus = VerificationStatus.ACCEPTED
+    needs_review: bool = False
+    uncertainty_flags: list[ReviewFlag] = Field(default_factory=list)
+    reason_codes: list[VerificationReason] = Field(default_factory=list)
     quality: QualityAssessment | None = None
     processing_warnings: list[ProcessingWarning] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -720,6 +935,20 @@ class DocumentResult(BaseModel):
         actual = [page.page_number for page in self.pages]
         if actual and actual != expected:
             raise ValueError("document pages must be ordered and contiguous")
+        (
+            self.status,
+            self.needs_review,
+            self.uncertainty_flags,
+            self.reason_codes,
+        ) = _synchronize_parent_review_state(
+            self.status,
+            self.needs_review,
+            self.uncertainty_flags,
+            self.reason_codes,
+            self.pages,
+        )
+        if self.quality is not None and self.quality.status is not self.status:
+            self.quality = self.quality.model_copy(update={"status": self.status})
         return self
 
     def canonical_dict(self) -> dict[str, object]:

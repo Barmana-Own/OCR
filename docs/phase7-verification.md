@@ -58,6 +58,31 @@ consensus candidates remain otherwise usable. Tiny text requires the configured
 consensus threshold by default. Every decision stores both a status and reason
 codes; status is never inferred from a single provider confidence field.
 
+## Evidence independence
+
+Verification separates text stability from independent evidence. Each
+candidate receives the deterministic evidence key
+`(backend_family, backend, model, model_version)`. Preprocessing variant,
+render/DPI, region scale, retry number, and image variant remain attempt
+attributes and never create a new independent identity. A missing backend
+family falls back to the backend adapter name.
+
+The engine records `stability_count` and
+`independent_evidence_count` in its in-memory outcome and persists the
+decision through reason codes. `stable_across_variants` means repeated
+attempts agree; `independent_backend_consensus` means distinct configured
+evidence keys agree; `correlated_evidence_only` means the agreement did not
+meet the configured independent-evidence threshold. Model versions are part
+of the key, so separately configured versions are distinct identities under
+this explicit policy, while their provenance remains visible in every
+attempt.
+
+Same-key variants can select a stable candidate, but they cannot override low
+confidence or tiny-text uncertainty into `verified` when independent
+consensus is required. High-confidence correlated retries may remain
+`accepted`; they are not silently upgraded to `verified` and are not marked
+human review solely because a benign retry was recorded.
+
 ## Retry and DPI behavior
 
 `RetryPlan` describes this bounded order:

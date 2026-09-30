@@ -6,7 +6,12 @@ from PIL import Image
 
 from ocr_platform.config import Settings
 from ocr_platform.dataset import DatasetExporter, DatasetExportPolicy
-from ocr_platform.domain import ProcessingManifest, VerificationStatus
+from ocr_platform.domain import (
+    BlockType,
+    ProcessingManifest,
+    TableCellResult,
+    VerificationStatus,
+)
 from ocr_platform.errors import ArtifactStorageError
 from ocr_platform.normalization import DigitPolicy, NormalizationConfig
 from ocr_platform.pipeline import DocumentPipeline
@@ -43,6 +48,12 @@ def test_default_export_excludes_review_lines_and_manifest_records_counts(
     assert exported.manifest["counts"]["exported_lines"] == 0
     assert not list((exported.root / "line-crops").glob("*.png"))
     assert (exported.root / "pages" / "page_0001" / "page.json").is_file()
+    assert "شماره ۱۲۴" not in (exported.root / "document.txt").read_text(encoding="utf-8")
+    assert "شماره ۱۲۴" not in (exported.root / "document.md").read_text(encoding="utf-8")
+    page_payload = json.loads(
+        (exported.root / "pages" / "page_0001" / "page.json").read_text(encoding="utf-8")
+    )
+    assert page_payload["page"]["blocks"][0]["lines"] == []
     canonical = json.loads((exported.root / "document.json").read_text(encoding="utf-8"))
     assert canonical["pages"][0]["blocks"][0]["lines"][0]["raw_text"] == "شماره ۱۲۴"
 
@@ -77,6 +88,80 @@ def test_all_with_status_exports_review_crop_with_explicit_partition_and_mapping
     assert label["crop"]["page_bbox"] == line.bbox.as_list()
     assert label["crop"]["pixel_bbox"] == [10, 10, 80, 28]
     assert label["page_image_path"] == "pages/page_0001/image.png"
+
+
+def test_default_and_all_policies_handle_review_table_cells_safely(tmp_path: Path) -> None:
+    source_path = _source(tmp_path)
+    settings = Settings(environment="test", storage_root=tmp_path / "artifacts")
+    pipeline = DocumentPipeline(settings, backends=(DeterministicBackend(),))
+    document = pipeline.process_path(
+        source_path,
+        filename="source.png",
+        declared_content_type="image/png",
+    )
+    source_line = document.pages[0].blocks[0].lines[0]
+    review_cell = TableCellResult(
+        id="review-cell",
+        row=0,
+        column=0,
+        raw_text="review cell",
+        normalized_text="review cell",
+        bbox=source_line.bbox,
+        confidence=0.2,
+        reading_order=0,
+        needs_review=True,
+        source=source_line.source,
+        extraction=source_line.extraction,
+    )
+    table_block = document.pages[0].blocks[0].model_copy(
+        update={
+            "block_type": BlockType.TABLE,
+            "lines": [],
+            "table_cells": [review_cell],
+            "needs_review": True,
+            "verification_status": VerificationStatus.HUMAN_REVIEW_REQUIRED,
+        }
+    )
+    table_page = document.pages[0].model_copy(
+        update={
+            "blocks": [table_block],
+            "needs_review": True,
+            "verification_status": VerificationStatus.HUMAN_REVIEW_REQUIRED,
+        }
+    )
+    table_document = document.model_copy(
+        update={
+            "pages": [table_page],
+            "needs_review": True,
+            "status": VerificationStatus.HUMAN_REVIEW_REQUIRED,
+        }
+    )
+    exporter = DatasetExporter(pipeline.store)
+
+    default_export = exporter.export(table_document, tmp_path / "exports")
+    assert "review cell" not in (default_export.root / "document.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "review cell" not in (default_export.root / "document.md").read_text(
+        encoding="utf-8"
+    )
+    default_page = json.loads(
+        (default_export.root / "pages" / "page_0001" / "page.json").read_text(encoding="utf-8")
+    )
+    assert default_page["page"]["blocks"][0]["table_cells"] == []
+
+    all_export = exporter.export(
+        table_document,
+        tmp_path / "exports",
+        policy=DatasetExportPolicy.ALL_WITH_STATUS,
+    )
+    assert "[human_review_required;review] review cell" in (
+        all_export.root / "document.txt"
+    ).read_text(encoding="utf-8")
+    all_page = json.loads(
+        (all_export.root / "pages" / "page_0001" / "page.json").read_text(encoding="utf-8")
+    )
+    assert all_page["page"]["blocks"][0]["table_cells"][0]["needs_review"] is True
 
 
 def test_strict_verified_only_excludes_same_backend_retry_result(tmp_path: Path) -> None:

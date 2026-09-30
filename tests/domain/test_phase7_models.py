@@ -1,14 +1,24 @@
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
 
 from ocr_platform.domain import (
+    BlockResult,
+    BlockType,
     BoundingBox,
     CoordinateSpace,
+    DocumentResult,
     ExtractionMetadata,
     ExtractionMethod,
     LineResult,
     OCRCandidate,
+    PageResult,
+    PageType,
     Provenance,
+    SourceMetadata,
+    TableCellResult,
+    TextType,
     VerificationReason,
     VerificationRecord,
     VerificationStatus,
@@ -106,3 +116,91 @@ def test_tiny_text_promotes_review_flag_before_state_synchronization() -> None:
 
     assert line.needs_review is True
     assert line.verification_status == VerificationStatus.HUMAN_REVIEW_REQUIRED
+
+
+def test_review_required_cannot_remain_verified_for_line_or_table_cell() -> None:
+    line = LineResult(
+        id="line-verified-review",
+        raw_text="ABC",
+        normalized_text="ABC",
+        bbox=BoundingBox(x0=0, y0=0, x1=20, y1=10),
+        reading_order=0,
+        needs_review=True,
+        verification_status=VerificationStatus.VERIFIED,
+        source=provenance(),
+        extraction=extraction(),
+    )
+    cell = TableCellResult(
+        id="cell-verified-review",
+        row=0,
+        column=0,
+        raw_text="ABC",
+        normalized_text="ABC",
+        bbox=BoundingBox(x0=0, y0=0, x1=20, y1=10),
+        reading_order=0,
+        needs_review=True,
+        verification_status=VerificationStatus.VERIFIED,
+        text_type=TextType.PRINTED,
+        source=provenance(),
+        extraction=extraction(),
+    )
+
+    assert line.verification_status == VerificationStatus.HUMAN_REVIEW_REQUIRED
+    assert cell.verification_status == VerificationStatus.HUMAN_REVIEW_REQUIRED
+    assert line.needs_review is True
+    assert cell.needs_review is True
+
+
+def test_parent_block_and_document_status_cannot_hide_review_child() -> None:
+    line = LineResult(
+        id="line-review-child",
+        raw_text="ABC",
+        normalized_text="ABC",
+        bbox=BoundingBox(x0=0, y0=0, x1=20, y1=10),
+        reading_order=0,
+        needs_review=True,
+        source=provenance(),
+        extraction=extraction(),
+    )
+    block = BlockResult(
+        id="block-review-child",
+        block_type=BlockType.PRINTED_TEXT,
+        bbox=BoundingBox(x0=0, y0=0, x1=20, y1=10),
+        reading_order=0,
+        verification_status=VerificationStatus.VERIFIED,
+        source=provenance(),
+        lines=[line],
+    )
+    page = PageResult(
+        page_number=1,
+        width=20,
+        height=10,
+        coordinate_space=CoordinateSpace.RENDERED_PIXEL,
+        page_type=PageType.IMAGE,
+        source_uri="artifact://doc-1/page.png",
+        rendered_width=20,
+        rendered_height=10,
+        verification_status=VerificationStatus.VERIFIED,
+        blocks=[block],
+    )
+    document = DocumentResult(
+        id="doc-1",
+        pipeline_version="0.1.0",
+        source=SourceMetadata(
+            filename="source.png",
+            content_type="image/png",
+            byte_size=1,
+            checksum_sha256="a" * 64,
+            source_uri="artifact://doc-1/source.png",
+        ),
+        configuration_hash="b" * 64,
+        processing_checksum="c" * 64,
+        processing_started_at=datetime.now(UTC),
+        pages=[page],
+        status=VerificationStatus.VERIFIED,
+    )
+
+    assert block.verification_status == VerificationStatus.HUMAN_REVIEW_REQUIRED
+    assert page.verification_status == VerificationStatus.HUMAN_REVIEW_REQUIRED
+    assert document.status == VerificationStatus.HUMAN_REVIEW_REQUIRED
+    assert document.needs_review is True

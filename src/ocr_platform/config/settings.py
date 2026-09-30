@@ -480,7 +480,7 @@ class Settings:
             )
         if self.verification_min_independent_backend_families <= 0:
             raise ConfigurationError(
-                "minimum independent backend families must be positive"
+                "minimum independent evidence identities must be positive"
             )
         if self.verification_min_text_length <= 0:
             raise ConfigurationError("minimum verification text length must be positive")

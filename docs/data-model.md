@@ -78,6 +78,9 @@ The source URI is an indirection, not a public URL. Access control belongs to th
 | native_text_reliable | Native PDF layer decision | Required boolean |
 | native_text_reason | Decision evidence/fallback reason | Recommended when a PDF is inspected |
 | page_flags | Page-level uncertainty/review flags | Default empty |
+| verification_status | Aggregate evidence certainty for the page | Propagated from blocks; default accepted |
+| needs_review | Aggregate human-review gate | True when page or child evidence requires review |
+| uncertainty_flags / reason_codes | Aggregate review evidence | Stable, deduplicated child explanations |
 
 A native page can have no rendered URI. A mixed page may retain native blocks and have a rendered URI for OCR-routed image regions.
 
@@ -95,8 +98,8 @@ A native page can have no rendered URI. A mixed page may retain native blocks an
 | lines | Line records belonging to this block |
 | table_cells | Structured cell records for table blocks; never flattened as canonical text |
 | table_cells | Structured cell records for table blocks; never flattened as canonical text |
-| needs_review | Block review indicator |
-| uncertainty_flags | Block uncertainty/review reasons |
+| needs_review | Block review indicator, propagated from child evidence |
+| uncertainty_flags | Block uncertainty/review reasons, including propagated child flags |
 
 Block type is a classification claim. When evidence is insufficient, use unknown and surface the reason; do not silently default to printed text.
 
@@ -147,7 +150,15 @@ Current executable model: ocr_platform.domain.Line.
 | words | Optional word geometry and confidence | Preserve when backend supplies it |
 | candidates | All bounded backend/preprocessing candidates retained for verification | Preserve raw evidence |
 
-The current Pydantic validator promotes any uncertainty flag to needs_review and promotes accepted lines with review need to human_review_required. That behavior is an integrity rule, not a UI convenience.
+The current Pydantic validators enforce that `needs_review=true` cannot remain
+paired with `accepted` or `verified`; the status is promoted to
+`human_review_required` while an existing `failed` status is preserved. Review
+and blocking evidence propagate through `BlockResult`, `PageResult`, and
+`DocumentResult`, so a parent cannot claim a cleaner certainty state than a
+review-required child. Low-confidence/tiny-text flags may remain on a verified
+record only when the verification reason explicitly records independent
+consensus; benign high-confidence retry stability remains auditable without
+automatically forcing human review.
 
 ### Word
 

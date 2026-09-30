@@ -25,7 +25,9 @@ from ocr_platform.domain import (
     Document,
     Line,
     Page,
+    ReviewFlag,
     TableCellResult,
+    VerificationReason,
     VerificationStatus,
 )
 from ocr_platform.errors import ArtifactStorageError, InvalidDocumentError
@@ -38,6 +40,28 @@ _REVIEW_STATUSES = frozenset(
         VerificationStatus.UNCERTAIN,
         VerificationStatus.HUMAN_REVIEW_REQUIRED,
         VerificationStatus.FAILED,
+    }
+)
+_BLOCKING_EXPORT_FLAGS = frozenset(
+    set(ReviewFlag)
+    - {ReviewFlag.LOW_CONFIDENCE, ReviewFlag.TINY_TEXT}
+)
+_BLOCKING_EXPORT_REASONS = frozenset(
+    {
+        VerificationReason.BACKEND_DISAGREEMENT,
+        VerificationReason.NORMALIZED_DISAGREEMENT,
+        VerificationReason.DIGIT_DISAGREEMENT,
+        VerificationReason.PUNCTUATION_DIFFERENCE,
+        VerificationReason.CONFIDENCE_SCALE_MISMATCH,
+        VerificationReason.EMPTY_TEXT,
+        VerificationReason.SHORT_TEXT,
+        VerificationReason.SUSPICIOUS_CHARACTERS,
+        VerificationReason.LANGUAGE_SCRIPT_MISMATCH,
+        VerificationReason.EXPECTED_FORMAT_MISMATCH,
+        VerificationReason.LOW_IMAGE_QUALITY,
+        VerificationReason.RETRY_EXHAUSTED,
+        VerificationReason.BACKEND_FAILURE,
+        VerificationReason.STORAGE_FAILURE,
     }
 )
 
@@ -146,7 +170,7 @@ class DatasetExporter:
             if "md" in selected_formats:
                 files.append(self._write_markdown(temporary, document, selected_policy))
             if "pages" in selected_formats:
-                files.extend(self._write_pages(temporary, document))
+                files.extend(self._write_pages(temporary, document, selected_policy))
             if "crops" in selected_formats:
                 files.extend(self._write_crops(temporary, document, selected_policy))
             files = self._unique_paths(files)
@@ -197,25 +221,27 @@ class DatasetExporter:
                 if block.table_cells:
                     rows: dict[int, list[str]] = {}
                     for cell in sorted(block.table_cells, key=lambda item: (item.row, item.column)):
-                        if cls._eligible(cell.verification_status, policy, cell.needs_review):
+                        if cls._eligible(cell, policy):
                             rows.setdefault(cell.row, []).append(
                                 cls._text_for_export(
                                     cell.raw_text,
                                     cell.verification_status,
                                     policy,
                                     corrected_text=cell.corrected_text,
+                                    needs_review=cell.needs_review,
                                 )
                             )
                     entries.extend(" | ".join(rows[row]) for row in sorted(rows))
                     continue
                 for line in sorted(block.lines, key=lambda item: item.reading_order):
-                    if cls._eligible(line.verification_status, policy, line.needs_review):
+                    if cls._eligible(line, policy):
                         entries.append(
                             cls._text_for_export(
                                 line.raw_text,
                                 line.verification_status,
                                 policy,
                                 corrected_text=line.corrected_text,
+                                needs_review=line.needs_review,
                             )
                         )
             page_text.append("\n".join(entries))
@@ -240,12 +266,16 @@ class DatasetExporter:
                         ["| Row | Column | Text | Status |", "| ---: | ---: | --- | --- |"]
                     )
                     for cell in sorted(block.table_cells, key=lambda item: (item.row, item.column)):
-                        if cls._eligible(cell.verification_status, policy, cell.needs_review):
+                        if cls._eligible(cell, policy):
                             text = cls._escape_markdown(
                                 cell.corrected_text or cell.raw_text
                             )
                             if policy is DatasetExportPolicy.ALL_WITH_STATUS:
-                                text = f"[{cell.verification_status.value}] {text}"
+                                status_label = cls._status_label(
+                                    cell.verification_status,
+                                    cell.needs_review,
+                                )
+                                text = f"[{status_label}] {text}"
                             content.append(
                                 f"| {cell.row} | {cell.column} | {text} | "
                                 f"{cell.verification_status.value} |"
@@ -253,10 +283,14 @@ class DatasetExporter:
                     content.append("")
                     continue
                 for line in sorted(block.lines, key=lambda item: item.reading_order):
-                    if cls._eligible(line.verification_status, policy, line.needs_review):
+                    if cls._eligible(line, policy):
                         text = cls._escape_markdown(line.corrected_text or line.raw_text)
                         if policy is DatasetExportPolicy.ALL_WITH_STATUS:
-                            text = f"[{line.verification_status.value}] {text}"
+                            status_label = cls._status_label(
+                                line.verification_status,
+                                line.needs_review,
+                            )
+                            text = f"[{status_label}] {text}"
                         content.append(
                             f"- {line.reading_order} [{line.verification_status.value}] {text}"
                         )
@@ -275,32 +309,96 @@ class DatasetExporter:
         policy: DatasetExportPolicy,
         *,
         corrected_text: str | None = None,
+        needs_review: bool = False,
     ) -> str:
         text = corrected_text or raw_text
         if policy is DatasetExportPolicy.ALL_WITH_STATUS:
-            return f"[{status.value}] {text}"
+            return f"[{DatasetExporter._status_label(status, needs_review)}] {text}"
         return text
 
     @staticmethod
+    def _status_label(status: VerificationStatus, needs_review: bool) -> str:
+        return f"{status.value};review" if needs_review else status.value
+
+    @staticmethod
     def _eligible(
-        status: VerificationStatus,
+        item: Line | TableCellResult | VerificationStatus,
         policy: DatasetExportPolicy,
-        needs_review: bool = False,
+        needs_review: bool | None = None,
+        reason_codes: Iterable[VerificationReason] = (),
     ) -> bool:
-        if needs_review and policy is not DatasetExportPolicy.ALL_WITH_STATUS:
+        if isinstance(item, VerificationStatus):
+            status = item
+            item_needs_review = bool(needs_review)
+            item_flags: Iterable[ReviewFlag] = ()
+            item_reason_codes = tuple(reason_codes)
+        else:
+            status = item.verification_status
+            item_needs_review = item.needs_review if needs_review is None else (
+                item.needs_review or needs_review
+            )
+            item_flags = item.uncertainty_flags
+            item_reason_codes = tuple(item.reason_codes)
+
+        if policy is DatasetExportPolicy.ALL_WITH_STATUS:
+            return True
+        if item_needs_review or status in _REVIEW_STATUSES:
+            return False
+        if DatasetExporter._has_blocking_uncertainty(
+            status,
+            item_flags,
+            item_reason_codes,
+        ):
             return False
         if policy is DatasetExportPolicy.STRICT_VERIFIED_ONLY:
             return status is VerificationStatus.VERIFIED
         if policy is DatasetExportPolicy.ACCEPTED_VERIFIED:
             return status in {VerificationStatus.ACCEPTED, VerificationStatus.VERIFIED}
-        return True
+        return False
 
-    def _write_pages(self, root: Path, document: Document) -> list[Path]:
+    @staticmethod
+    def _has_blocking_uncertainty(
+        status: VerificationStatus,
+        flags: Iterable[ReviewFlag],
+        reason_codes: Iterable[VerificationReason],
+    ) -> bool:
+        normalized_flags = set(flags)
+        normalized_reasons = set(reason_codes)
+        independent = VerificationReason.INDEPENDENT_BACKEND_CONSENSUS in normalized_reasons
+        if normalized_flags & _BLOCKING_EXPORT_FLAGS:
+            return True
+        if normalized_flags & {ReviewFlag.LOW_CONFIDENCE, ReviewFlag.TINY_TEXT} and not (
+            status is VerificationStatus.VERIFIED and independent
+        ):
+            return True
+        if normalized_reasons & _BLOCKING_EXPORT_REASONS:
+            return True
+        if normalized_reasons & {
+            VerificationReason.LOW_PRIMARY_CONFIDENCE,
+            VerificationReason.TINY_TEXT,
+        } and not (status is VerificationStatus.VERIFIED and independent):
+            return True
+        return status is VerificationStatus.VERIFIED and bool(
+            normalized_reasons.intersection(
+                {
+                    VerificationReason.INSUFFICIENT_INDEPENDENT_EVIDENCE,
+                    VerificationReason.CORRELATED_EVIDENCE_ONLY,
+                    VerificationReason.INSUFFICIENT_EVIDENCE,
+                }
+            )
+        )
+
+    def _write_pages(
+        self,
+        root: Path,
+        document: Document,
+        policy: DatasetExportPolicy,
+    ) -> list[Path]:
         page_root = root / "page-images"
         page_root.mkdir(parents=True, exist_ok=True)
         outputs: list[Path] = []
         for page in document.pages:
-            outputs.extend(self._write_structured_page(root, document, page))
+            outputs.extend(self._write_structured_page(root, document, page, policy))
             if page.rendered_uri:
                 image_bytes = self._read_artifact_uri(page.rendered_uri)
                 page_path = page_root / f"page-{page.page_number:04d}.png"
@@ -308,7 +406,13 @@ class DatasetExporter:
                 outputs.append(page_path)
         return outputs
 
-    def _write_structured_page(self, root: Path, document: Document, page: Page) -> list[Path]:
+    def _write_structured_page(
+        self,
+        root: Path,
+        document: Document,
+        page: Page,
+        policy: DatasetExportPolicy,
+    ) -> list[Path]:
         page_number = page.page_number
         page_directory = root / "pages" / f"page_{page_number:04d}"
         page_directory.mkdir(parents=True, exist_ok=True)
@@ -329,12 +433,29 @@ class DatasetExporter:
                 "coordinate_space": CoordinateSpace.RENDERED_PIXEL.value,
             }
         page_manifest = page_directory / "page.json"
+        page_payload = page.model_dump(mode="json")
+        if policy is not DatasetExportPolicy.ALL_WITH_STATUS:
+            for block_payload, block in zip(page_payload["blocks"], page.blocks, strict=True):
+                block_payload["lines"] = [
+                    line_payload
+                    for line_payload, line in zip(
+                        block_payload["lines"], block.lines, strict=True
+                    )
+                    if self._eligible(line, policy)
+                ]
+                block_payload["table_cells"] = [
+                    cell_payload
+                    for cell_payload, cell in zip(
+                        block_payload["table_cells"], block.table_cells, strict=True
+                    )
+                    if self._eligible(cell, policy)
+                ]
         page_manifest.write_text(
             json.dumps(
                 {
                     "document_id": document.id,
                     "page_number": page_number,
-                    "page": page.model_dump(mode="json"),
+                    "page": page_payload,
                     "image": image_metadata,
                 },
                 ensure_ascii=False,
@@ -365,7 +486,7 @@ class DatasetExporter:
         for page in document.pages:
             if not page.rendered_uri:
                 continue
-            structured_outputs = self._write_structured_page(root, document, page)
+            structured_outputs = self._write_structured_page(root, document, page, policy)
             outputs.extend(structured_outputs)
             image_bytes = self._read_artifact_uri(page.rendered_uri)
             try:
@@ -376,7 +497,7 @@ class DatasetExporter:
                 raise ArtifactStorageError("rendered page could not be decoded for crops") from exc
             for block in page.blocks:
                 for line in block.lines:
-                    if not self._eligible(line.verification_status, policy, line.needs_review):
+                    if not self._eligible(line, policy):
                         continue
                     if line.source.coordinate_space != CoordinateSpace.RENDERED_PIXEL:
                         continue
@@ -551,10 +672,10 @@ class DatasetExporter:
         line_counts = Counter(line.verification_status.value for line in lines)
         cell_counts = Counter(cell.verification_status.value for cell in cells)
         exported_lines = sum(
-            cls._eligible(line.verification_status, policy, line.needs_review) for line in lines
+            cls._eligible(line, policy) for line in lines
         )
         exported_cells = sum(
-            cls._eligible(cell.verification_status, policy, cell.needs_review) for cell in cells
+            cls._eligible(cell, policy) for cell in cells
         )
         counts: dict[str, int] = {
             "pages": len(document.pages),

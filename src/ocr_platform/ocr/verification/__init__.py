@@ -14,6 +14,14 @@ from .engine import (
     VerificationPolicy,
     make_candidate,
 )
+from .evidence import (
+    EvidenceKey,
+    candidate_evidence_key,
+    evidence_keys,
+    independent_consensus_count,
+    same_backend_stability_count,
+    text_stability_count,
+)
 from .retry import RetryAttempt, RetryPlan, RetryStage
 from .scoring import (
     CandidateScore,
@@ -33,6 +41,12 @@ __all__ = [
     "VerificationEngine",
     "VerificationOutcome",
     "VerificationPolicy",
+    "EvidenceKey",
+    "candidate_evidence_key",
+    "evidence_keys",
+    "independent_consensus_count",
+    "same_backend_stability_count",
+    "text_stability_count",
     "cer_like_distance",
     "compare_text",
     "edit_distance",

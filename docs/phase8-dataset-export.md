@@ -44,6 +44,13 @@ The canonical `document.json` always contains all evidence and all statuses.
 The default policy excludes `uncertain`, `human_review_required`, and `failed`
 records from plain text, Markdown, and line-crop labels. A caller must opt into
 `all_with_status` to export those records as derived training artifacts.
+Eligibility is evaluated against the complete line or table-cell record, not
+only its enum status. `needs_review`, blocking uncertainty flags, and
+unresolved disagreement/quality reason codes are excluded from the default
+policies even if a malformed legacy record still carries `accepted` or
+`verified`. `all_with_status` includes every record and labels status plus the
+review marker in text/Markdown while structured labels retain the full flags,
+reason codes, candidates, and verification history.
 
 ## Package layout
 

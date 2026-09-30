@@ -15,6 +15,12 @@ from ocr_platform.domain import (
 from ocr_platform.normalization import NormalizationConfig, normalize_text
 
 from .comparison import TextComparison, compare_text
+from .evidence import (
+    EvidenceKey,
+    evidence_keys,
+    independent_consensus_count,
+    same_backend_stability_count,
+)
 from .scoring import (
     CandidateScore,
     CandidateScoringPolicy,
@@ -94,6 +100,9 @@ class VerificationOutcome:
     reason_codes: tuple[VerificationReason, ...] = ()
     selected_candidate_id: str | None = None
     comparisons: tuple[TextComparison, ...] = ()
+    stability_count: int = 0
+    independent_evidence_count: int = 0
+    independent_evidence_keys: tuple[EvidenceKey, ...] = ()
 
 
 class VerificationEngine:
@@ -127,10 +136,13 @@ class VerificationEngine:
         normalized_groups = _group_by_normalized_text(limited)
         winning_text, winning_indexes = _winning_group(normalized_groups)
         consensus = len(winning_indexes) >= self.policy.min_consensus_candidates
-        independent_backend_families = {
-            _backend_family(limited[index]) for index in winning_indexes
-        }
-        independent_consensus = len(independent_backend_families) >= (
+        winning_candidates = tuple(limited[index] for index in winning_indexes)
+        stability_count = same_backend_stability_count(winning_candidates, winning_text)
+        independent_evidence_keys = evidence_keys(winning_candidates, winning_text)
+        independent_evidence_count = independent_consensus_count(
+            winning_candidates, winning_text
+        )
+        independent_consensus = independent_evidence_count >= (
             self.policy.min_independent_backend_families
         )
         pool_indexes = winning_indexes if consensus else tuple(range(len(limited)))
@@ -165,7 +177,7 @@ class VerificationEngine:
         _append_score_flags(flags, selected_score.reason_codes)
 
         if consensus:
-            consensus_candidates = [limited[index] for index in winning_indexes]
+            consensus_candidates = list(winning_candidates)
             backends = {candidate.extraction.backend for candidate in consensus_candidates}
             variants = {
                 candidate.extraction.preprocess_variant for candidate in consensus_candidates
@@ -174,9 +186,12 @@ class VerificationEngine:
                 reason_codes.append(VerificationReason.CONSENSUS_ACROSS_BACKENDS)
             if len(variants) > 1:
                 reason_codes.append(VerificationReason.CONSENSUS_ACROSS_VARIANTS)
-            if self.policy.require_independent_backend_consensus and not independent_consensus:
+                reason_codes.append(VerificationReason.STABLE_ACROSS_VARIANTS)
+            if independent_consensus and len(backends) == 1:
+                reason_codes.append(VerificationReason.INDEPENDENT_BACKEND_CONSENSUS)
+            elif self.policy.require_independent_backend_consensus and not independent_consensus:
+                reason_codes.append(VerificationReason.CORRELATED_EVIDENCE_ONLY)
                 reason_codes.append(VerificationReason.INSUFFICIENT_INDEPENDENT_EVIDENCE)
-                flags.append(ReviewFlag.INDEPENDENT_EVIDENCE_INSUFFICIENT)
         elif self.policy.require_consensus_for_verified:
             reason_codes.append(VerificationReason.INSUFFICIENT_EVIDENCE)
 
@@ -189,7 +204,20 @@ class VerificationEngine:
             VerificationReason.EXPECTED_FORMAT_MISMATCH,
         }
         selected_is_malformed = bool(blocking_reasons.intersection(selected_score.reason_codes))
-        low_confidence = VerificationReason.LOW_PRIMARY_CONFIDENCE in reason_codes
+        low_confidence = any(
+            VerificationReason.LOW_PRIMARY_CONFIDENCE in scores[index].reason_codes
+            for index in winning_indexes
+        )
+        if low_confidence and VerificationReason.LOW_PRIMARY_CONFIDENCE not in reason_codes:
+            reason_codes.append(VerificationReason.LOW_PRIMARY_CONFIDENCE)
+        tiny_consensus_required = selected.tiny_text and self.policy.require_consensus_for_tiny_text
+        if (
+            self.policy.require_independent_backend_consensus
+            and consensus
+            and not independent_consensus
+            and (low_confidence or tiny_consensus_required)
+        ):
+            flags.append(ReviewFlag.INDEPENDENT_EVIDENCE_INSUFFICIENT)
         low_confidence_overridden = (
             low_confidence
             and consensus
@@ -200,7 +228,6 @@ class VerificationEngine:
             and self.policy.allow_consensus_override_low_confidence
             and not selected_is_malformed
         )
-        tiny_consensus_required = selected.tiny_text and self.policy.require_consensus_for_tiny_text
         independent_consensus_required = (
             self.policy.require_independent_backend_consensus
             and consensus
@@ -252,6 +279,9 @@ class VerificationEngine:
             reason_codes=tuple(reason_codes),
             selected_candidate_id=selected.candidate_id,
             comparisons=comparisons,
+            stability_count=stability_count,
+            independent_evidence_count=independent_evidence_count,
+            independent_evidence_keys=independent_evidence_keys,
         )
 
     def _select_index(
@@ -353,22 +383,6 @@ def _group_by_normalized_text(
     for index, candidate in enumerate(candidates):
         grouped.setdefault(candidate.normalized_text, []).append(index)
     return {text: tuple(indexes) for text, indexes in grouped.items()}
-
-
-def _backend_family(candidate: AttemptCandidate) -> str:
-    """Return the independent evidence identity for one candidate.
-
-    Preprocessing variants and DPI changes remain auditable attempts, but they
-    do not count as independent backend evidence. Older adapters that do not
-    declare a family safely fall back to their adapter name.
-    """
-
-    family = candidate.extraction.backend_family.strip().lower()
-    return (
-        family
-        if family and family != "unknown"
-        else candidate.extraction.backend.strip().lower()
-    )
 
 
 def _winning_group(groups: dict[str, tuple[int, ...]]) -> tuple[str, tuple[int, ...]]:

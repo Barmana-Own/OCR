@@ -5,7 +5,14 @@ from ocr_platform.domain import (
     VerificationReason,
     VerificationStatus,
 )
-from ocr_platform.ocr.verification import VerificationEngine, VerificationPolicy, make_candidate
+from ocr_platform.ocr.verification import (
+    VerificationEngine,
+    VerificationPolicy,
+    candidate_evidence_key,
+    independent_consensus_count,
+    make_candidate,
+    same_backend_stability_count,
+)
 
 
 def extraction(
@@ -14,15 +21,19 @@ def extraction(
     scale: str = "test-0-1",
     variant: str = "source-render",
     dpi: int = 300,
+    model: str = "test",
+    model_version: str = "1",
+    backend_family: str = "unknown",
 ) -> ExtractionMetadata:
     return ExtractionMetadata(
         method=ExtractionMethod.OCR,
         backend=backend,
-        model="test",
-        model_version="1",
+        model=model,
+        model_version=model_version,
         dpi=dpi,
         preprocess_variant=variant,
         confidence_scale=scale,
+        backend_family=backend_family,
     )
 
 
@@ -35,11 +46,22 @@ def candidate(
     tiny_text: bool = False,
     scale: str = "test-0-1",
     dpi: int = 300,
+    model: str = "test",
+    model_version: str = "1",
+    backend_family: str = "unknown",
 ):
     return make_candidate(
         text,
         confidence=confidence,
-        extraction=extraction(backend, scale=scale, variant=variant, dpi=dpi),
+        extraction=extraction(
+            backend,
+            scale=scale,
+            variant=variant,
+            dpi=dpi,
+            model=model,
+            model_version=model_version,
+            backend_family=backend_family,
+        ),
         reason=f"{backend}-{variant}",
         tiny_text=tiny_text,
     )
@@ -92,6 +114,85 @@ def test_low_confidence_same_backend_multipass_consensus_requires_review() -> No
     assert VerificationReason.CONSENSUS_ACROSS_VARIANTS in outcome.reason_codes
     assert VerificationReason.INSUFFICIENT_INDEPENDENT_EVIDENCE in outcome.reason_codes
     assert ReviewFlag.INDEPENDENT_EVIDENCE_INSUFFICIENT in outcome.flags
+
+
+def test_three_same_tesseract_variants_are_stability_not_independent_consensus() -> None:
+    candidates = [
+        candidate(
+            "ABC-123",
+            backend="tesseract",
+            backend_family="tesseract",
+            confidence=0.40,
+            variant=variant,
+        )
+        for variant in ("source-render", "grayscale", "contrast")
+    ]
+
+    outcome = VerificationEngine(
+        VerificationPolicy(max_attempts=3, min_consensus_candidates=2)
+    ).evaluate(candidates)
+
+    assert outcome.status == VerificationStatus.HUMAN_REVIEW_REQUIRED
+    assert outcome.stability_count == 3
+    assert outcome.independent_evidence_count == 1
+    assert VerificationReason.STABLE_ACROSS_VARIANTS in outcome.reason_codes
+    assert VerificationReason.CORRELATED_EVIDENCE_ONLY in outcome.reason_codes
+    assert VerificationReason.INDEPENDENT_BACKEND_CONSENSUS not in outcome.reason_codes
+    assert candidate_evidence_key(candidates[0]) == (
+        "tesseract",
+        "tesseract",
+        "test",
+        "1",
+    )
+    assert independent_consensus_count(candidates) == 1
+    assert same_backend_stability_count(candidates) == 3
+
+
+def test_two_independent_backend_families_can_verify_agreement() -> None:
+    candidates = [
+        candidate("ABC-123", backend="tesseract", backend_family="tesseract", confidence=0.96),
+        candidate("ABC-123", backend="paddle", backend_family="paddleocr", confidence=0.97),
+    ]
+
+    outcome = VerificationEngine(VerificationPolicy()).evaluate(candidates)
+
+    assert outcome.status == VerificationStatus.VERIFIED
+    assert outcome.independent_evidence_count == 2
+    assert VerificationReason.CONSENSUS_ACROSS_BACKENDS in outcome.reason_codes
+    assert VerificationReason.CORRELATED_EVIDENCE_ONLY not in outcome.reason_codes
+
+
+def test_model_versions_are_distinct_evidence_identities_by_policy() -> None:
+    candidates = [
+        candidate(
+            "ABC-123",
+            backend="tesseract",
+            backend_family="tesseract",
+            model_version=version,
+            confidence=0.40,
+            variant=f"model-{version}",
+        )
+        for version in ("1", "2")
+    ]
+
+    outcome = VerificationEngine(VerificationPolicy()).evaluate(candidates)
+
+    assert outcome.status == VerificationStatus.VERIFIED
+    assert outcome.independent_evidence_count == 2
+    assert VerificationReason.INDEPENDENT_BACKEND_CONSENSUS in outcome.reason_codes
+
+
+def test_high_confidence_same_backend_retry_remains_accepted_not_verified() -> None:
+    outcome = VerificationEngine(VerificationPolicy()).evaluate(
+        [
+            candidate("ABC-123", backend="tesseract", confidence=0.96, variant="source-render"),
+            candidate("ABC-123", backend="tesseract", confidence=0.97, variant="grayscale"),
+        ]
+    )
+
+    assert outcome.status == VerificationStatus.ACCEPTED
+    assert outcome.independent_evidence_count == 1
+    assert ReviewFlag.INDEPENDENT_EVIDENCE_INSUFFICIENT not in outcome.flags
 
 
 def test_verified_threshold_can_be_used_without_consensus_when_policy_allows_it() -> None:
