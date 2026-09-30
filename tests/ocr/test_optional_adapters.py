@@ -6,14 +6,19 @@ from types import SimpleNamespace
 
 import pytest
 
+from ocr_platform.config import Settings
 from ocr_platform.domain import BlockType, CoordinateSpace, TextType
-from ocr_platform.errors import BackendUnavailableError
+from ocr_platform.errors import BackendUnavailableError, ConfigurationError
 from ocr_platform.handwriting import (
     TransformersHandwritingBackend,
     UnavailableHandwritingBackend,
     build_handwriting_backend,
 )
-from ocr_platform.ocr.backends import PaddleOcrBackend
+from ocr_platform.ocr.backends import (
+    PaddleOcrBackend,
+    build_ocr_backends,
+    resolve_paddle_languages,
+)
 from ocr_platform.ocr.models import OcrRegion
 from ocr_platform.tables import PaddleStructureTableBackend
 
@@ -30,7 +35,7 @@ def _region(block_type: BlockType = BlockType.PRINTED_TEXT) -> OcrRegion:
 
 
 def test_paddle_adapter_maps_2x_nested_records_without_model_import() -> None:
-    backend = PaddleOcrBackend(language="fas+eng")
+    backend = PaddleOcrBackend(language="ar", requested_language="fas")
 
     class FakeEngine:
         def ocr(self, _image: bytes, cls: bool):
@@ -54,6 +59,277 @@ def test_paddle_adapter_maps_2x_nested_records_without_model_import() -> None:
     assert result.lines[0].raw_text == "شماره ABC"
     assert result.lines[0].confidence == pytest.approx(0.965)
     assert result.lines[0].words[0].text == "شماره"
+    assert dict(result.runtime_metadata)["language"] == "ar"
+    assert "Persian accuracy is not claimed" in dict(result.runtime_metadata)[
+        "language_capability_note"
+    ]
+
+
+def test_paddle_language_mapping_is_explicit_and_single_model() -> None:
+    resolved = resolve_paddle_languages(("fas", "eng"))
+
+    assert [(item.requested, item.provider) for item in resolved] == [
+        ("fas", "ar"),
+        ("eng", "en"),
+    ]
+    with pytest.raises(ValueError, match="one language per recognizer"):
+        PaddleOcrBackend(language="fas+eng")
+    with pytest.raises(ConfigurationError, match="unsupported"):
+        resolve_paddle_languages(("jpn",))
+
+
+def test_paddle_factory_expands_mixed_language_models(tmp_path) -> None:
+    settings = Settings(
+        enabled_ocr_backends=("paddle",),
+        paddle_languages=("fas", "eng"),
+        model_path=tmp_path,
+        cache_path=tmp_path,
+    )
+
+    backends = build_ocr_backends(settings)
+
+    assert len(backends) == 2
+    assert [backend.language for backend in backends] == ["ar", "en"]
+    assert [backend.requested_language for backend in backends] == ["fas", "eng"]
+
+
+def test_paddle_confidence_is_not_percentage_rescaled() -> None:
+    backend = PaddleOcrBackend(language="en")
+
+    class FakeEngine:
+        def ocr(self, _image: bytes, cls: bool):
+            assert cls is True
+            return [[[[0, 0], [40, 0], [40, 20], [0, 20]], ("ABC", 97.0)]]
+
+    backend._engine = FakeEngine()
+    result = backend.recognize(
+        b"image",
+        region=_region(),
+        dpi=300,
+        region_scale=1,
+        preprocess_variant="source-render",
+    )
+
+    assert result.lines[0].confidence is None
+    assert "record_0:paddle_confidence_out_of_range_not_rescaled" in result.warnings
+
+
+def test_paddle_predict_shape_and_geometry_are_preserved() -> None:
+    backend = PaddleOcrBackend(language="en")
+
+    class FakeEngine:
+        def predict(self, *, input: bytes):
+            assert input == b"image"
+            return {
+                "rec_texts": ["ABC-123"],
+                "rec_scores": [0.91],
+                "rec_boxes": [[10, 20, 80, 40]],
+            }
+
+    backend._engine = FakeEngine()
+    result = backend.recognize(
+        b"image",
+        region=_region(),
+        dpi=450,
+        region_scale=2,
+        preprocess_variant="region-scale-2",
+    )
+
+    assert result.lines[0].bbox == (10.0, 20.0, 80.0, 40.0)
+    assert result.lines[0].words[0].bbox == (10.0, 20.0, 80.0, 40.0)
+    assert result.lines[0].confidence == pytest.approx(0.91)
+
+
+def test_paddle_predict_without_scores_preserves_text_with_unknown_confidence() -> None:
+    backend = PaddleOcrBackend(language="en")
+
+    class FakeEngine:
+        def predict(self, *, input: bytes):
+            assert input == b"image"
+            return {
+                "rec_texts": ["VISIBLE"],
+                "rec_boxes": [[10, 20, 80, 40]],
+            }
+
+    backend._engine = FakeEngine()
+    result = backend.recognize(
+        b"image",
+        region=_region(),
+        dpi=300,
+        region_scale=1,
+        preprocess_variant="source-render",
+    )
+
+    assert result.lines[0].raw_text == "VISIBLE"
+    assert result.lines[0].confidence is None
+
+
+def test_paddle_predict_object_records_are_unwrapped_without_provider_leakage() -> None:
+    backend = PaddleOcrBackend(language="en")
+
+    class ProviderRecord:
+        def to_dict(self) -> dict[str, object]:
+            return {
+                "text": "OBJECT-123",
+                "score": 0.88,
+                "box": [[10, 20], [80, 20], [80, 40], [10, 40]],
+            }
+
+    class FakeEngine:
+        def predict(self, *, input: bytes):
+            assert input == b"image"
+            return [ProviderRecord()]
+
+    backend._engine = FakeEngine()
+    result = backend.recognize(
+        b"image",
+        region=_region(),
+        dpi=300,
+        region_scale=1,
+        preprocess_variant="source-render",
+    )
+
+    assert result.lines[0].raw_text == "OBJECT-123"
+    assert result.lines[0].confidence == pytest.approx(0.88)
+    assert result.lines[0].polygon is not None
+
+
+def test_paddle_malformed_provider_record_is_warned_without_placeholder_text() -> None:
+    backend = PaddleOcrBackend(language="en")
+
+    class FakeEngine:
+        def ocr(self, _image: bytes, cls: bool):
+            assert cls is True
+            return [
+                ["not-a-provider-record"],
+                [[[0, 0], [20, 0], [20, 20], [0, 20]], ("ABC", 0.9)],
+            ]
+
+    backend._engine = FakeEngine()
+    result = backend.recognize(
+        b"image",
+        region=_region(),
+        dpi=300,
+        region_scale=1,
+        preprocess_variant="source-render",
+    )
+
+    assert [line.raw_text for line in result.lines] == ["ABC"]
+    assert "record_0:malformed_record" in result.warnings
+
+
+def test_paddle_lazy_loading_constructs_one_engine_and_selects_cpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ocr_platform.ocr.backends import paddle_adapter
+
+    constructions: list[dict[str, object]] = []
+
+    class FakeEngine:
+        def ocr(self, _image: bytes, cls: bool):
+            assert cls is True
+            return [[[[0, 0], [20, 0], [20, 20], [0, 20]], ("ABC", 0.9)]]
+
+    def constructor(
+        *,
+        lang: str | None = None,
+        device: str | None = None,
+        use_gpu: bool | None = None,
+        show_log: bool | None = None,
+    ) -> FakeEngine:
+        constructions.append(
+            {"lang": lang, "device": device, "use_gpu": use_gpu, "show_log": show_log}
+        )
+        return FakeEngine()
+
+    def fake_import(module_name: str) -> object:
+        if module_name == "paddleocr":
+            return SimpleNamespace(PaddleOCR=constructor, __version__="3.test")
+        if module_name == "paddle":
+            return SimpleNamespace()
+        raise ImportError(module_name)
+
+    monkeypatch.setattr(paddle_adapter, "_module_available", lambda _name: True)
+    monkeypatch.setattr(paddle_adapter.importlib, "import_module", fake_import)
+    backend = PaddleOcrBackend(
+        language="en",
+        device="cpu",
+        allow_model_downloads=True,
+        model_load_mode="lazy",
+    )
+
+    for _ in range(2):
+        backend.recognize(
+            b"image",
+            region=_region(),
+            dpi=300,
+            region_scale=1,
+            preprocess_variant="source-render",
+        )
+
+    assert len(constructions) == 1
+    assert constructions[0] == {
+        "lang": "en",
+        "device": "cpu",
+        "use_gpu": False,
+        "show_log": False,
+    }
+    assert backend.model_version == "3.test"
+
+
+def test_paddle_missing_runtime_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ocr_platform.ocr.backends import paddle_adapter
+
+    monkeypatch.setattr(paddle_adapter, "_module_available", lambda _name: True)
+
+    def missing_import(_module_name: str) -> object:
+        raise ImportError("paddle runtime absent")
+
+    monkeypatch.setattr(paddle_adapter.importlib, "import_module", missing_import)
+    backend = PaddleOcrBackend(language="en", allow_model_downloads=True)
+
+    with pytest.raises(BackendUnavailableError, match="PaddleOCR is not installed"):
+        backend.recognize(
+            b"image",
+            region=_region(),
+            dpi=300,
+            region_scale=1,
+            preprocess_variant="source-render",
+        )
+
+
+@pytest.mark.model
+def test_paddle_real_model_smoke_is_explicitly_opt_in() -> None:
+    if os.getenv("OCR_RUN_MODEL_TESTS") != "1":
+        pytest.skip("set OCR_RUN_MODEL_TESTS=1 to run optional model tests")
+    model_path = os.getenv("OCR_PADDLE_MODEL_PATH")
+    if not model_path:
+        pytest.skip("OCR_PADDLE_MODEL_PATH is required for the model smoke test")
+    pytest.importorskip("paddleocr")
+    from io import BytesIO
+
+    from PIL import Image
+
+    image = BytesIO()
+    Image.new("RGB", (64, 32), "white").save(image, format="PNG")
+    backend = PaddleOcrBackend(
+        language=os.getenv("OCR_PADDLE_LANGUAGE", "en"),
+        model_path=model_path,
+        device="cpu",
+        allow_model_downloads=False,
+    )
+    result = backend.recognize(
+        image.getvalue(),
+        region=_region(),
+        dpi=300,
+        region_scale=1,
+        preprocess_variant="source-render",
+    )
+
+    assert result.backend == "paddle"
+    assert result.confidence_scale == "paddle_0_1"
 
 
 def test_pp_structure_adapter_preserves_cells_and_warnings() -> None:

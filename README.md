@@ -28,7 +28,7 @@ Version 0.1.0 is an API-first modular monolith with synchronous compatibility pr
 - real-pipeline benchmark execution mode that rejects synthetic-only ground truth when external evaluation is required;
 - enforced processing deadlines and an opt-in distributed worker Compose profile.
 
-Heavy OCR/layout/handwriting model packages are optional deployment dependencies. The default Tesseract adapter fails closed when its executable is unavailable; the pipeline never fabricates OCR text. NumPy/OpenCV remain optional; the required preprocessing path is bounded Pillow code. See [docs/phase13-program.md](docs/phase13-program.md) for the added adapters and deployment boundary.
+Heavy OCR/layout/handwriting model packages are optional deployment dependencies. The default Tesseract adapter fails closed when its executable is unavailable; the optional Paddle printed backend is independently configured and fails closed when its runtime or local model provisioning is unavailable. The pipeline never fabricates OCR text. NumPy/OpenCV remain optional; the required preprocessing path is bounded Pillow code. See [docs/phase6-ocr-routing.md](docs/phase6-ocr-routing.md) for Paddle language/model configuration and confidence semantics.
 
 ## Requirements
 

@@ -17,7 +17,7 @@
     "imaging": "Pillow",
     "layout": "Pillow projection fallback with optional PaddleOCR PP-Structure adapter",
     "ocr_routing": "provider-neutral printed OCR, handwriting, table, and mixed-form routing",
-    "printed_ocr": "Tesseract adapter with configurable fas+eng language bundle and bounded timeout",
+    "printed_ocr": "Tesseract adapter plus optional independent PaddleOCR adapter with one-model-per-language mapping, lazy/startup loading, bounded timeout metadata, and fail-closed capability reporting",
     "handwriting": "configurable lazy Transformers HTR adapter with local-only default, bounded generation, and explicit unavailable capability when runtime/model is absent",
     "tables": "structured TableResult/TableCell contract with explicit unavailable adapter",
     "verification": "backend-aware scoring, bounded retries, consensus, uncertainty reason codes, and immutable review artifacts",
@@ -45,7 +45,7 @@
     "local_adapters": ["src/ocr_platform/database/local.py"]
   },
   "validation": {
-    "tests": "PASS: 263 passed; 2 skipped model tests; 2 dependency deprecation warnings",
+    "tests": "PASS: 273 passed; 3 skipped model tests; 2 dependency deprecation warnings",
     "coverage": "PASS: 86% total; 2 dependency deprecation warnings",
     "lint": "PASS",
     "compile": "PASS",
@@ -232,6 +232,7 @@
     "src/ocr_platform/ingestion/office_reader.py",
     "src/ocr_platform/ingestion/text_reader.py",
     "src/ocr_platform/ocr/backends/paddle.py",
+    "src/ocr_platform/ocr/backends/paddle_adapter.py",
     "src/ocr_platform/tables/paddle.py",
     "src/ocr_platform/handwriting/transformers.py",
     "src/ocr_platform/intelligence/engine.py",
@@ -284,6 +285,53 @@
       "external_ground_truth_benchmark": "NOT_RUN: no permitted labeled external corpus included"
     },
     "truthfulness_note": "No OCR accuracy or handwriting-quality claim is made without permitted ground truth and installed model runtimes."
+  },
+  "task04_paddle_printed_ocr": {
+    "status": "PASS",
+    "commit": "pending",
+    "remote": "pending",
+    "objective": "Independent optional PaddleOCR printed-text backend with explicit language mapping, bounded lifecycle, provenance, and verification-safe evidence",
+    "backends": ["TesseractBackend", "PaddleOcrBackend"],
+    "configuration": [
+      "OCR_PADDLE_LANGUAGES",
+      "OCR_PADDLE_ALLOW_MODEL_DOWNLOADS",
+      "OCR_PADDLE_SHOW_LOG",
+      "OCR_MODEL_PATH",
+      "OCR_CACHE_PATH",
+      "OCR_MODEL_LOAD_MODE",
+      "OCR_DEVICE",
+      "OCR_BACKEND_TIMEOUT_SECONDS"
+    ],
+    "validation": {
+      "targeted_tests": "PASS: Paddle/configuration/verification tests passed; optional Paddle model smoke skipped",
+      "full_tests": "PASS: 273 passed; 3 skipped model tests; 2 dependency deprecation warnings",
+      "compileall": "PASS",
+      "ruff": "PASS",
+      "pip_check": "PASS",
+      "package_build": "PASS",
+      "compose_config": "PASS",
+      "base_import": "PASS: PaddleOCR remains optional",
+      "paddle_model_smoke": "NOT_RUN: runtime and permitted local weights unavailable",
+      "static_type_checker": "NOT_RUN: mypy and pyright not configured or installed",
+      "pip_audit": "NOT_RUN: tool not installed",
+      "docker_runtime": "NOT_RUN: Docker daemon unavailable"
+    },
+    "artifacts": [
+      "src/ocr_platform/ocr/backends/paddle_adapter.py",
+      "src/ocr_platform/ocr/backends/paddle.py",
+      "src/ocr_platform/ocr/backends/factory.py",
+      "src/ocr_platform/ocr/models.py",
+      "src/ocr_platform/config/settings.py",
+      "src/ocr_platform/pipeline.py",
+      "tests/ocr/test_optional_adapters.py",
+      "tests/ocr/test_phase7_engine.py",
+      "docs/phase6-ocr-routing.md",
+      ".env.example"
+    ],
+    "known_limitations": [
+      "Platform-specific paddlepaddle/paddlepaddle-gpu runtime and model provisioning remain deployment responsibilities.",
+      "No OCR accuracy or Persian capability claim is made without installed models and permitted ground truth."
+    ]
   },
   "known_non_blocking_issues": [
     "The default Pillow layout detector is conservative; handwriting/formula/form/table-cell semantics require deployed model adapters.",

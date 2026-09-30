@@ -118,3 +118,24 @@ Phase 12 preserves the prior modular-monolith/API-first scope and adds:
 
 No existing route, API field, database path, content asset, or prior test was
 removed or disabled by Phase 12.
+
+## Task 04 additive baseline
+
+Task 04 preserves the existing Tesseract adapter, OCR protocol, verification
+evidence identity, model lifecycle limits, and all prior routes/tests. It adds:
+
+- an optional lazy/startup PaddleOCR printed adapter with provider-specific
+  2.x/3.x response normalization, bounded inference metadata, CPU/CUDA device
+  selection, and typed unavailable/failure errors;
+- explicit one-provider-language configuration with deterministic expansion for
+  mixed Persian/English settings and an auditable Arabic-script mapping note for
+  Persian requests;
+- raw Paddle 0..1 confidence handling without percentage rescaling, malformed
+  output warnings, provider polygon/word geometry propagation, and runtime/model
+  provenance;
+- configuration-hashed Paddle language/download/log settings and regression
+  coverage for independent consensus, lazy model reuse, optional imports,
+  geometry, confidence, and device behavior.
+
+No existing route, API field, database path, content asset, or prior test was
+removed or disabled by Task 04.

@@ -12,7 +12,7 @@ history.
 
 | Capability | Contract | Current runtime behavior |
 |---|---|---|
-| Printed OCR | `ocr.models.OcrBackend` | `TesseractBackend` is a real external CLI adapter. Language selection is configured through `OCR_LANGUAGES` and defaults to `fas+eng` in the settings-backed pipeline factory. |
+| Printed OCR | `ocr.models.OcrBackend` | `TesseractBackend` is a real external CLI adapter. `PaddleOcrBackend` is an optional independent provider adapter. Tesseract keeps its `fas+eng` language bundle; Paddle uses one provider model language per instance and the factory expands configured languages into bounded recognizers. |
 | Handwriting | `handwriting.ports.HandwritingBackend` | `TransformersHandwritingBackend` is an optional, model-configurable TrOCR-style adapter. `UnavailableHandwritingBackend` remains the explicit fail-closed capability when no validated runtime/model is provisioned. |
 | Tables | `tables.ports.TableBackend` | `PaddleStructureTableBackend` is an optional PP-Structure adapter selected by `paddle`, `paddle-table`, `ppstructure`, or equivalent aliases. `TableResult` preserves structured cells, coordinates, row/column indexes, confidence, runtime metadata, warnings, review flags, and raw cell candidates. The default unavailable adapter fails closed. |
 | Region routing | `ocr.routing.RegionRouter` | Stable block/text/layout hints select printed, handwriting, table, or both printed+HTR routes for mixed forms. |
@@ -102,6 +102,10 @@ The following settings are validated and included in the configuration hash:
 - `OCR_ENABLED_OCR_BACKENDS`
 - `OCR_LANGUAGES`
 - `OCR_BACKEND_TIMEOUT_SECONDS`
+- `OCR_PADDLE_LANGUAGES` (optional explicit provider languages; empty derives from
+  `OCR_LANGUAGES`)
+- `OCR_PADDLE_ALLOW_MODEL_DOWNLOADS` (false by default)
+- `OCR_PADDLE_SHOW_LOG`
 - `OCR_HANDWRITING_BACKEND`
 - `OCR_HANDWRITING_MODEL_ID` and optional `OCR_HANDWRITING_PROCESSOR_ID`
 - `OCR_HANDWRITING_REVISION`
@@ -112,6 +116,19 @@ The following settings are validated and included in the configuration hash:
 - `OCR_HANDWRITING_FALLBACK_TO_PRINTED`
 - `OCR_TABLE_BACKEND`
 - confidence/retry/DPI and crop limits from earlier phases
+
+The optional printed Paddle runtime is installed with `pip install
+ocr-platform[paddle]`, plus the platform-specific `paddlepaddle` or
+`paddlepaddle-gpu` runtime selected by deployment. Paddle model weights are not
+part of the base package. Paddle confidence values are retained on their
+declared `paddle_0_1` scale; values outside that scale are not percentage
+rescaled and instead produce an explicit warning/review signal. The factory
+does not pass a Tesseract-style `fas+eng` bundle to Paddle: `fas` maps to the
+Arabic-script Paddle model (`ar`) with a runtime capability note, and no
+Persian accuracy claim is made by that mapping. Set
+`OCR_PADDLE_ALLOW_MODEL_DOWNLOADS=true` only in a controlled provisioning
+environment; local model paths and cache paths remain configuration/provenance
+inputs.
 
 The optional HTR runtime is installed with `pip install
 ocr-platform[htr]`; it includes Torch, Transformers, and SentencePiece. The
@@ -137,8 +154,8 @@ empty/failed table fallback to printed OCR, candidate retention, line crop
 provenance, backend failure warnings, and the existing native-first, layout,
 retry, API, security, storage, and export behavior.
 
-The full repository suite currently passes with 254 tests and one optional
-model test skipped by default. Static type checking, dependency advisory
+The full repository suite currently passes with 273 tests and three optional
+model tests skipped by default. Static type checking, dependency advisory
 scanning, and Docker validation are not claimed unless separately executed in
 the target deployment environment.
 

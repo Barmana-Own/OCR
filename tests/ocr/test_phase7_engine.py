@@ -148,6 +148,29 @@ def test_three_same_tesseract_variants_are_stability_not_independent_consensus()
     assert same_backend_stability_count(candidates) == 3
 
 
+def test_three_same_paddle_variants_are_stability_not_independent_consensus() -> None:
+    candidates = [
+        candidate(
+            "شماره ۱۲۳",
+            backend="paddle",
+            backend_family="paddleocr",
+            confidence=0.40,
+            variant=variant,
+        )
+        for variant in ("source-render", "grayscale", "contrast")
+    ]
+
+    outcome = VerificationEngine(
+        VerificationPolicy(max_attempts=3, min_consensus_candidates=2)
+    ).evaluate(candidates)
+
+    assert outcome.status == VerificationStatus.HUMAN_REVIEW_REQUIRED
+    assert outcome.stability_count == 3
+    assert outcome.independent_evidence_count == 1
+    assert VerificationReason.CORRELATED_EVIDENCE_ONLY in outcome.reason_codes
+    assert independent_consensus_count(candidates) == 1
+
+
 def test_two_independent_backend_families_can_verify_agreement() -> None:
     candidates = [
         candidate("ABC-123", backend="tesseract", backend_family="tesseract", confidence=0.96),

@@ -51,7 +51,7 @@ ingest
 | Validation/schema | Pydantic v2 models in domain/models.py | Treat these models as the canonical evidence contract |
 | PDF | PyMuPDF is required; PdfReader extracts text and renders pages | Keep native extraction before raster OCR; expose extraction and rendering as separate future ports |
 | Raster images | Pillow is required; OpenCV is optional under the vision extra | Pillow remains the core decode/encode path; OpenCV-backed preprocessing is optional |
-| OCR | Tesseract is an external adapter; PaddleOCR is optional | Keep every provider behind a protocol and fail closed when no backend is available |
+| OCR | Tesseract and optional PaddleOCR are external adapters | Keep every provider behind a protocol, preserve backend-specific confidence scales, and fail closed when no backend is available |
 | Persistence | LocalArtifactStore plus atomic local job/document JSON repositories are implemented; repository ports exist in database/ports.py | Keep local single-node persistence for the current profile; add shared durable adapters only for a justified deployment profile |
 | Workers | Bounded in-process executor in workers/orchestrator.py; no external queue runtime | Keep the worker behind a processor/repository boundary; add Redis/RQ/Celery or another queue only for multi-instance/restart requirements |
 | Tests | pytest tests cover domain, ingestion, preprocessing, routing, verification, API, storage, exports, and security | Extend tests at contract boundaries when target ports become executable code |

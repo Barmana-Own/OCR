@@ -961,5 +961,57 @@
       "Transformers max_time provides cooperative generation bounding; hard process-level termination remains a worker/runtime responsibility.",
       "Explicitly enabling remote model downloads or remote code requires controlled provisioning, licensing review, and deployment security review."
     ]
+  },
+  "task_04_paddle_printed_ocr": {
+    "status": "PASS",
+    "commit": "pending",
+    "remote": "pending",
+    "objective": "Independent optional PaddleOCR printed-text backend with explicit language mapping, bounded lifecycle, provenance, and verification-safe evidence",
+    "artifacts": [
+      "src/ocr_platform/ocr/backends/paddle_adapter.py",
+      "src/ocr_platform/ocr/backends/paddle.py",
+      "src/ocr_platform/ocr/backends/factory.py",
+      "src/ocr_platform/ocr/backends/__init__.py",
+      "src/ocr_platform/ocr/models.py",
+      "src/ocr_platform/config/settings.py",
+      "src/ocr_platform/pipeline.py",
+      "pyproject.toml",
+      ".env.example",
+      "tests/ocr/test_optional_adapters.py",
+      "tests/ocr/test_phase7_engine.py",
+      "tests/config/test_settings.py",
+      "docs/phase6-ocr-routing.md",
+      "docs/phase13-program.md",
+      "docs/architecture.md",
+      "README.md"
+    ],
+    "decisions": [
+      "Paddle remains an optional lazy provider boundary; no PaddleOCR or Paddle runtime is imported by the base package and no model download occurs in standard tests.",
+      "Paddle recognizers receive one provider language per instance. OCR_PADDLE_LANGUAGES expands mixed configuration deterministically; fas/fa maps to the Arabic-script model with an explicit no-Persian-accuracy-claim note.",
+      "Paddle confidence values are accepted only on the declared 0..1 scale and are never silently converted from percentages; invalid values become unknown confidence with warnings.",
+      "The per-backend engine is cached behind a load lock, startup/lazy loading is configurable, inference is bounded by the existing pipeline gate, and requested CUDA fails closed when unavailable.",
+      "Provider polygons and word geometry remain typed and are mapped through existing crop/page transforms without fabricating geometry; malformed records produce warnings and no placeholder text.",
+      "Paddle uses the existing backend/model/version evidence identity, so preprocessing variants remain correlated stability evidence while Tesseract and Paddle remain independent backend families."
+    ],
+    "validation": [
+      {"command": "PYTHONPATH=src pytest -q tests/ocr/test_optional_adapters.py tests/config/test_settings.py tests/ocr/test_phase7_engine.py", "status": "PASS", "evidence": "targeted Paddle/configuration/verification tests passed; optional Paddle model smoke skipped"},
+      {"command": "python -m compileall -q src tests", "status": "PASS", "evidence": "no syntax errors"},
+      {"command": "PYTHONPATH=src pytest -q", "status": "PASS", "evidence": "273 passed; 3 optional model tests skipped; 2 dependency deprecation warnings"},
+      {"command": "ruff check src tests", "status": "PASS", "evidence": "no findings"},
+      {"command": "python -m pip check", "status": "PASS", "evidence": "No broken requirements found"},
+      {"command": "python -m build --no-isolation", "status": "PASS", "evidence": "sdist and wheel include the optional Paddle adapter boundary"},
+      {"command": "docker compose config", "status": "PASS", "evidence": "Compose configuration parsed successfully"},
+      {"command": "base import smoke", "status": "PASS", "evidence": "ocr_platform imports without PaddleOCR installed"},
+      {"command": "changed-scope security review", "status": "PASS", "evidence": "lazy optional imports, no default downloads, bounded inputs, typed failures, no sensitive text logging"},
+      {"command": "Paddle model/GPU smoke", "status": "NOT_RUN", "evidence": "PaddleOCR/Paddle runtime and permitted local model weights are unavailable"},
+      {"command": "static type checker and pip-audit", "status": "NOT_RUN", "evidence": "mypy/pyright and pip-audit are not configured or installed"},
+      {"command": "Docker runtime smoke", "status": "NOT_RUN", "evidence": "Docker daemon unavailable"}
+    ],
+    "known_limitations": [
+      "The optional paddle extra does not bundle platform-specific paddlepaddle or paddlepaddle-gpu wheels; deployment must select and provision a compatible runtime and model directory.",
+      "The adapter records Paddle package version and configured model/language identity; exact model revision remains provider/deployment metadata when the installed Paddle API does not expose it.",
+      "Inference timeout detection is cooperative after provider return; process-level worker timeout remains the hard containment boundary.",
+      "No OCR accuracy, Persian accuracy, or GPU performance claim is made without installed models and permitted ground truth."
+    ]
   }
 }

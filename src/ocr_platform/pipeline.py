@@ -858,7 +858,21 @@ class DocumentPipeline:
                     if line.polygon
                     else None
                 ),
-                words=tuple(replace(word, bbox=scale_box(word.bbox)) for word in line.words),
+                words=tuple(
+                    replace(
+                        word,
+                        bbox=scale_box(word.bbox),
+                        polygon=(
+                            tuple(
+                                replace(point, x=point.x * x_scale, y=point.y * y_scale)
+                                for point in word.polygon
+                            )
+                            if word.polygon
+                            else None
+                        ),
+                    )
+                    for word in line.words
+                ),
             )
             for line in result.lines
         )
@@ -1099,7 +1113,12 @@ class DocumentPipeline:
         mapped_lines = []
         for line in result.lines:
             mapped_words = tuple(
-                replace(word, bbox=map_bbox_to_page(word.bbox, prepared)) for word in line.words
+                replace(
+                    word,
+                    bbox=map_bbox_to_page(word.bbox, prepared),
+                    polygon=map_polygon_to_page(word.polygon, prepared),
+                )
+                for word in line.words
             )
             mapped_lines.append(
                 replace(
@@ -1667,6 +1686,7 @@ class DocumentPipeline:
                     x1=max(0.0, word.bbox[2]),
                     y1=max(0.0, word.bbox[3]),
                 ),
+                polygon=list(word.polygon) if word.polygon else None,
                 confidence=word.confidence,
                 reading_order=word.reading_order or word_index,
             )

@@ -73,6 +73,9 @@ DEFAULT_REDIS_QUEUE_NAME = "ocr:jobs"
 DEFAULT_OCR_BACKENDS = ("tesseract",)
 DEFAULT_OCR_LANGUAGES = ("fas", "eng")
 DEFAULT_OCR_BACKEND_TIMEOUT_SECONDS = 120
+DEFAULT_PADDLE_LANGUAGES: tuple[str, ...] = ()
+DEFAULT_PADDLE_ALLOW_MODEL_DOWNLOADS = False
+DEFAULT_PADDLE_SHOW_LOG = False
 DEFAULT_LAYOUT_BACKEND = "heuristic"
 DEFAULT_LAYOUT_MAX_PIXELS = 4_000_000
 DEFAULT_LAYOUT_MAX_REGIONS = 512
@@ -393,6 +396,9 @@ class Settings:
     enabled_ocr_backends: tuple[str, ...] = DEFAULT_OCR_BACKENDS
     ocr_languages: tuple[str, ...] = DEFAULT_OCR_LANGUAGES
     ocr_backend_timeout_seconds: int = DEFAULT_OCR_BACKEND_TIMEOUT_SECONDS
+    paddle_languages: tuple[str, ...] = DEFAULT_PADDLE_LANGUAGES
+    paddle_allow_model_downloads: bool = DEFAULT_PADDLE_ALLOW_MODEL_DOWNLOADS
+    paddle_show_log: bool = DEFAULT_PADDLE_SHOW_LOG
     layout_backend: str = DEFAULT_LAYOUT_BACKEND
     layout_max_pixels: int = DEFAULT_LAYOUT_MAX_PIXELS
     layout_max_regions: int = DEFAULT_LAYOUT_MAX_REGIONS
@@ -473,6 +479,13 @@ class Settings:
             for language in self.ocr_languages
         ):
             raise ConfigurationError("OCR language names must be safe and non-empty")
+        if any(
+            not re.fullmatch(r"[A-Za-z0-9_-]{2,32}", language)
+            for language in self.paddle_languages
+        ):
+            raise ConfigurationError("PaddleOCR language names must be safe and non-empty")
+        if len(self.paddle_languages) != len(set(self.paddle_languages)):
+            raise ConfigurationError("PaddleOCR language names must be unique")
         if (
             self.default_dpi <= 0
             or self.high_quality_dpi <= 0
@@ -692,6 +705,9 @@ class Settings:
             "enabled_ocr_backends": self.enabled_ocr_backends,
             "ocr_languages": self.ocr_languages,
             "ocr_backend_timeout_seconds": self.ocr_backend_timeout_seconds,
+            "paddle_languages": self.paddle_languages,
+            "paddle_allow_model_downloads": self.paddle_allow_model_downloads,
+            "paddle_show_log": self.paddle_show_log,
             "layout_backend": self.layout_backend,
             "layout_max_pixels": self.layout_max_pixels,
             "layout_max_regions": self.layout_max_regions,
@@ -865,6 +881,11 @@ class Settings:
             ocr_backend_timeout_seconds=_env_int(
                 "OCR_BACKEND_TIMEOUT_SECONDS", DEFAULT_OCR_BACKEND_TIMEOUT_SECONDS
             ),
+            paddle_languages=_env_csv("OCR_PADDLE_LANGUAGES", DEFAULT_PADDLE_LANGUAGES),
+            paddle_allow_model_downloads=_env_bool(
+                "OCR_PADDLE_ALLOW_MODEL_DOWNLOADS", DEFAULT_PADDLE_ALLOW_MODEL_DOWNLOADS
+            ),
+            paddle_show_log=_env_bool("OCR_PADDLE_SHOW_LOG", DEFAULT_PADDLE_SHOW_LOG),
             layout_backend=os.getenv("OCR_LAYOUT_BACKEND", DEFAULT_LAYOUT_BACKEND).strip(),
             layout_max_pixels=_env_int("OCR_LAYOUT_MAX_PIXELS", DEFAULT_LAYOUT_MAX_PIXELS),
             layout_max_regions=_env_int("OCR_LAYOUT_MAX_REGIONS", DEFAULT_LAYOUT_MAX_REGIONS),

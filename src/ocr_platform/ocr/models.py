@@ -37,6 +37,7 @@ class BackendWord:
     bbox: tuple[float, float, float, float]
     confidence: float | None
     reading_order: int
+    polygon: tuple[PolygonPoint, ...] | None = None
 
 
 @dataclass(frozen=True)

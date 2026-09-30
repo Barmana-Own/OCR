@@ -88,9 +88,9 @@
 
 | بررسی | نتیجه |
 |---|---|
-| PYTHONPATH=src pytest -q | PASS — ۲۶۳ موفق، ۲ مورد skip؛ دو هشدار deprecation وابستگی |
+| PYTHONPATH=src pytest -q | PASS — ۲۷۳ موفق، ۳ مورد skip؛ دو هشدار deprecation وابستگی |
 | python -m compileall -q src tests | PASS |
-| ruff check src tests scripts | PASS |
+| ruff check src tests | PASS |
 | python -m pip check | PASS |
 | python -m build --no-isolation | PASS |
 | docker compose config | PASS |
@@ -142,6 +142,20 @@
 | ایمنی نصب پایه | PASS — import کردن `ocr_platform` و `ocr_platform.tables` به PaddleOCR نیاز ندارد؛ smoke مدل فقط پشت marker مدل و runtime محلی صریح است |
 
 Task 02 در commit `86267f9` ثبت شد. runtime/مدل اختیاری PaddleOCR در محیط اعتبارسنجی نصب نبود و هیچ ادعای دقت مدل واقعی ارائه نمی‌شود.
+
+## شواهد Task 04: backend مستقل OCR چاپی Paddle
+
+| نیازمندی | نتیجه |
+|---|---|
+| backend مستقل OCR چاپی | PASS — `PaddleOcrBackend` به‌صورت adapter اختیاری lazy/startup در کنار Tesseract اضافه شده است؛ importهای provider ایزوله هستند و نصب پایه بدون PaddleOCR import می‌شود |
+| تنظیم زبان و مدل | PASS — `OCR_PADDLE_LANGUAGES` برای هر recognizer یک زبان provider را تنظیم می‌کند؛ `fas,eng` به‌صورت قطعی به مدل script عربی `ar` و مدل انگلیسی `en` گسترش می‌یابد و mapping عربی ادعای دقت فارسی ایجاد نمی‌کند |
+| نگاشت خروجی provider | PASS — رکوردهای nested نسخه ۲ و خروجی `predict` نسخه ۳ به line/word نوع‌دار نگاشت می‌شوند و متن خام، مقیاس confidence، polygon/هندسه word، DPI، scale، preprocessing، زبان، نسخه package/model، device و metadata runtime حفظ می‌شوند |
+| سیاست confidence | PASS — امتیاز Paddle فقط روی مقیاس اعلام‌شده ۰ تا ۱ پذیرفته می‌شود؛ مقدار درصدی یا malformed بدون rescale خاموش رد نمی‌شود و با warning و confidence نامعلوم ثبت می‌گردد |
+| چرخه عمر و خطا | PASS — ساخت model برای هر backend lazy و lock-protected است و بین regionها reuse می‌شود؛ download پیش‌فرض خاموش است، انتخاب CPU/CUDA صریح است و نبود runtime/model/GPU یا OOM خطای نوع‌دار ایجاد می‌کند |
+| استقلال راستی‌آزمایی | PASS — Tesseract و Paddle خانواده evidence جدا دارند؛ variantهای متعدد Paddle همچنان یک هویت evidence هستند و متن کم‌اطمینان را به‌تنهایی verified نمی‌کنند |
+| پوشش regression | PASS — آزمون adapter، تنظیمات، هندسه، خروجی malformed، نبود score، نبود import، گسترش factory، reuse lazy، انتخاب CPU و اجماع اختصاصی Paddle اضافه/به‌روزرسانی شده است |
+
+اعتبارسنجی مدل واقعی Task 04 به دلیل نصب نبودن runtimeهای PaddleOCR/Paddle و وزن مدل مجاز در این محیط انجام نشده است. هیچ ادعای دقت Paddle یا قابلیت زبان فارسی ارائه نمی‌شود. runtime از طریق extra اختیاری `[paddle]` و runtime پلتفرم‌محور Paddle که deployment انتخاب می‌کند تأمین می‌شود.
 
 ## وضعیت baseline دوازده‌مرحله‌ای
 

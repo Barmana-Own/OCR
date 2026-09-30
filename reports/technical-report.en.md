@@ -88,9 +88,9 @@ The following workstreams are implemented in the existing modular monolith. Adap
 
 | Check | Result |
 |---|---|
-| PYTHONPATH=src pytest -q | PASS — 263 passed, 2 skipped; two dependency deprecation warnings |
+| PYTHONPATH=src pytest -q | PASS — 273 passed, 3 skipped; two dependency deprecation warnings |
 | python -m compileall -q src tests | PASS |
-| ruff check src tests scripts | PASS |
+| ruff check src tests | PASS |
 | python -m pip check | PASS |
 | python -m build --no-isolation | PASS |
 | docker compose config | PASS |
@@ -142,6 +142,20 @@ The Task 01 change was committed and pushed to `origin/main` at `6e78341`.
 | Base installation safety | PASS — importing `ocr_platform` and `ocr_platform.tables` does not require PaddleOCR; model smoke is isolated behind `model` and explicit local-runtime settings |
 
 Task 02 was committed at `86267f9`. The optional PaddleOCR runtime/model was not installed in the validation environment; no real model accuracy claim is made.
+
+## Task 04 independent Paddle printed OCR evidence
+
+| Requirement | Result |
+|---|---|
+| Independent printed backend | PASS — `PaddleOcrBackend` is a lazy/startup optional adapter alongside Tesseract; provider imports remain isolated and the base package imports without PaddleOCR |
+| Language/model configuration | PASS — `OCR_PADDLE_LANGUAGES` configures one provider language per recognizer; mixed `fas,eng` expands deterministically to Arabic-script `ar` and English `en`, with no Persian accuracy claim from the Arabic mapping |
+| Provider result mapping | PASS — Paddle 2.x nested records and 3.x `predict` records map to typed lines/words, preserve raw text, confidence scale, polygon/word geometry, DPI, scale, preprocessing, language, model/package version, device, and runtime metadata |
+| Confidence policy | PASS — Paddle scores are accepted only on the declared 0..1 scale; percentage-like or malformed values are not silently rescaled and generate explicit warnings/unknown confidence |
+| Runtime lifecycle and failure behavior | PASS — per-backend model construction is lazy and lock-protected, reused across regions, downloads are disabled by default, CPU/CUDA selection is explicit, and missing runtime/model/GPU/OOM paths raise typed failures |
+| Verification independence | PASS — Tesseract and Paddle have distinct evidence families; multiple Paddle preprocessing variants retain one evidence identity and cannot independently verify low-confidence text |
+| Regression coverage | PASS — adapter, settings, geometry, malformed output, missing scores, import absence, factory expansion, lazy reuse, CPU selection, and Paddle-specific consensus tests are covered |
+
+Task 04 remains pending real model validation because PaddleOCR/Paddle runtime packages and permitted local model weights are not installed in this environment. No Paddle accuracy or Persian-language capability claim is made. The provider runtime is available through the existing optional `[paddle]` extra plus the platform-specific Paddle runtime selected by deployment.
 
 ## Prior twelve-stage baseline status
 

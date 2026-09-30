@@ -18,7 +18,7 @@ The incremental implementation program extends the existing auditable OCR founda
 
 - Native-first PDF extraction remains in place, and validated native readers now cover DOCX, XLSX, optional legacy XLS, PPTX, UTF-8 TXT, CSV, JSON, and HTML.
 - Office container signatures and members are checked before native extraction; embedded visual regions retain an explicit OCR/rendering requirement.
-- PaddleOCR, PP-Structure, configurable local-only Transformers HTR, PostgreSQL, S3-compatible storage, and Redis queue integrations are isolated behind optional adapters. HTR model choice, processor, revision, device, generation bound, and language/script metadata are configurable.
+- PaddleOCR printed recognition, PP-Structure, configurable local-only Transformers HTR, PostgreSQL, S3-compatible storage, and Redis queue integrations are isolated behind optional adapters. Paddle language/model selection, device, loading mode, cache/model paths, timeout, and download policy are configurable; HTR model choice, processor, revision, generation bound, and language/script metadata remain configurable.
 - Table regions preserve printed OCR text when structure extraction is unavailable and emit explicit capability/review warnings; optional PP-Structure cells are validated, mapped from scaled crops, and exported with row/column and provenance metadata.
 - Named preprocessing profiles are selected by the primary OCR path, with DPI, scale, and coordinate mapping retained for tiny-text variants.
 - Verification distinguishes backend family/name, model, and model version evidence identities; same-engine preprocessing variants are recorded as stability only and cannot create false independent consensus.
@@ -29,7 +29,7 @@ The incremental implementation program extends the existing auditable OCR founda
 
 ## Quality and security status
 
-The automated suite passed 263 tests; two optional model smoke tests were skipped by configuration, with two dependency deprecation warnings. Ruff, compilation, dependency consistency, package build, Compose configuration, base-import, and the repository OpenAPI checks passed. HTR failures remain explicitly review-required, and no handwriting or model accuracy claim was made: real OCR/HTR/table quality still requires permitted ground truth and installed runtimes.
+The automated suite passed 273 tests; three optional model smoke tests were skipped by configuration, with two dependency deprecation warnings. Ruff, compilation, dependency consistency, package build, Compose configuration, base-import, and the repository OpenAPI checks passed. HTR/Paddle failures remain explicitly review-required, and no handwriting, Persian, or model accuracy claim was made: real OCR/HTR/table quality still requires permitted ground truth and installed runtimes.
 
 ## Production status and limitations
 

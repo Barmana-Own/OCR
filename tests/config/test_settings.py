@@ -18,6 +18,9 @@ def test_phase2_defaults_are_centralized() -> None:
     assert settings.max_page_height > 0
     assert settings.processing_timeout_seconds > 0
     assert settings.enabled_ocr_backends == ("tesseract",)
+    assert settings.paddle_languages == ()
+    assert settings.paddle_allow_model_downloads is False
+    assert settings.paddle_show_log is False
     assert settings.layout_backend == "heuristic"
     assert settings.layout_max_pixels == 4_000_000
     assert settings.layout_max_regions == 512
@@ -45,6 +48,9 @@ def test_environment_overrides_parse_paths_lists_and_thresholds(
         "OCR_REGION_SCALE_CANDIDATES": "2, 3, 4",
         "OCR_VERIFICATION_THRESHOLD": "0.94",
         "OCR_ENABLED_OCR_BACKENDS": "tesseract,paddleocr",
+        "OCR_PADDLE_LANGUAGES": "fas,eng",
+        "OCR_PADDLE_ALLOW_MODEL_DOWNLOADS": "true",
+        "OCR_PADDLE_SHOW_LOG": "true",
         "OCR_LAYOUT_BACKEND": "pp_structure",
         "OCR_HANDWRITING_BACKEND": "surya",
         "OCR_TABLE_BACKEND": "pp_structure",
@@ -74,6 +80,9 @@ def test_environment_overrides_parse_paths_lists_and_thresholds(
     assert settings.region_scale_candidates == (2, 3, 4)
     assert settings.verification_threshold == 0.94
     assert settings.enabled_ocr_backends == ("tesseract", "paddleocr")
+    assert settings.paddle_languages == ("fas", "eng")
+    assert settings.paddle_allow_model_downloads is True
+    assert settings.paddle_show_log is True
     assert settings.layout_backend == "pp_structure"
     assert settings.handwriting_backend == "surya"
     assert settings.table_backend == "pp_structure"
