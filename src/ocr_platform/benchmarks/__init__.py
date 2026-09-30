@@ -30,6 +30,7 @@ from .models import (
     TinyTextStage,
     TinyTextStageCandidate,
 )
+from .predict import build_prediction_dataset, document_to_prediction
 from .runner import run_benchmark
 from .tiny_text import evaluate_tiny_text
 
@@ -65,6 +66,8 @@ __all__ = [
     "evaluate_tiny_text",
     "load_quality_gate_config",
     "run_benchmark",
+    "build_prediction_dataset",
+    "document_to_prediction",
     "TinyTextStage",
     "TinyTextStageCandidate",
     "TinyTextMetrics",

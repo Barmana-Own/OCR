@@ -49,6 +49,7 @@ class TableResult:
     preprocess_variant: str = "source-render"
     runtime_metadata: tuple[tuple[str, str], ...] = ()
     warnings: tuple[str, ...] = ()
+    backend_family: str = "unknown"
 
 
 class TableExtractionBackend(Protocol):
@@ -78,12 +79,26 @@ class UnavailableTableBackend:
         raise BackendUnavailableError(self.reason)
 
 
-def build_table_backend(name: str) -> TableExtractionBackend:
+def build_table_backend(
+    name: str,
+    *,
+    language: str = "en",
+    device: str = "auto",
+    model_path: str | None = None,
+) -> TableExtractionBackend:
     """Build only real configured adapters; unsupported names fail closed."""
 
     normalized = name.strip().lower()
     if normalized in {"", "unavailable", "none"}:
         return UnavailableTableBackend("table extraction backend is not configured")
+    if normalized in {"pp_structure", "paddle", "paddle_table"}:
+        from .paddle import PaddleStructureTableBackend
+
+        return PaddleStructureTableBackend(
+            language=language,
+            device=device,
+            model_path=model_path,
+        )
     return UnavailableTableBackend(f"table backend '{name}' is not available in this runtime")
 
 

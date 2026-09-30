@@ -36,6 +36,8 @@ class VerificationPolicy:
     max_suspicious_char_rate: float = 0.10
     min_image_quality: float = 0.20
     backend_confidence_thresholds: tuple[tuple[str, float], ...] = ()
+    require_independent_backend_consensus: bool = True
+    min_independent_backend_families: int = 2
 
     def __post_init__(self) -> None:
         _validate_probability(self.confidence_threshold, "confidence_threshold", strict=True)
@@ -48,6 +50,8 @@ class VerificationPolicy:
             raise ValueError("min_consensus_candidates must be positive")
         if self.min_consensus_candidates > self.max_attempts:
             raise ValueError("min_consensus_candidates cannot exceed max_attempts")
+        if self.min_independent_backend_families < 1:
+            raise ValueError("min_independent_backend_families must be positive")
         if self.min_text_length < 1:
             raise ValueError("min_text_length must be positive")
         _validate_probability(
@@ -123,6 +127,12 @@ class VerificationEngine:
         normalized_groups = _group_by_normalized_text(limited)
         winning_text, winning_indexes = _winning_group(normalized_groups)
         consensus = len(winning_indexes) >= self.policy.min_consensus_candidates
+        independent_backend_families = {
+            _backend_family(limited[index]) for index in winning_indexes
+        }
+        independent_consensus = len(independent_backend_families) >= (
+            self.policy.min_independent_backend_families
+        )
         pool_indexes = winning_indexes if consensus else tuple(range(len(limited)))
         selected_index = self._select_index(limited, scores, pool_indexes, scales_compatible)
         selected = limited[selected_index]
@@ -164,6 +174,9 @@ class VerificationEngine:
                 reason_codes.append(VerificationReason.CONSENSUS_ACROSS_BACKENDS)
             if len(variants) > 1:
                 reason_codes.append(VerificationReason.CONSENSUS_ACROSS_VARIANTS)
+            if self.policy.require_independent_backend_consensus and not independent_consensus:
+                reason_codes.append(VerificationReason.INSUFFICIENT_INDEPENDENT_EVIDENCE)
+                flags.append(ReviewFlag.INDEPENDENT_EVIDENCE_INSUFFICIENT)
         elif self.policy.require_consensus_for_verified:
             reason_codes.append(VerificationReason.INSUFFICIENT_EVIDENCE)
 
@@ -180,16 +193,27 @@ class VerificationEngine:
         low_confidence_overridden = (
             low_confidence
             and consensus
+            and (
+                independent_consensus
+                or not self.policy.require_independent_backend_consensus
+            )
             and self.policy.allow_consensus_override_low_confidence
             and not selected_is_malformed
         )
         tiny_consensus_required = selected.tiny_text and self.policy.require_consensus_for_tiny_text
+        independent_consensus_required = (
+            self.policy.require_independent_backend_consensus
+            and consensus
+            and not independent_consensus
+            and (low_confidence or tiny_consensus_required)
+        )
         unresolved = (
             scale_mismatch_requires_review
             or len(normalized_groups) > 1
             or selected_is_malformed
             or (low_confidence and not low_confidence_overridden)
             or (tiny_consensus_required and not consensus)
+            or independent_consensus_required
         )
         if unresolved:
             status = VerificationStatus.HUMAN_REVIEW_REQUIRED
@@ -204,6 +228,11 @@ class VerificationEngine:
                 or low_confidence_overridden
             )
             and (not self.policy.require_consensus_for_verified or consensus)
+            and (
+                independent_consensus
+                or not self.policy.require_independent_backend_consensus
+                or not consensus
+            )
         ):
             status = VerificationStatus.VERIFIED
         elif selected_score.usable:
@@ -324,6 +353,22 @@ def _group_by_normalized_text(
     for index, candidate in enumerate(candidates):
         grouped.setdefault(candidate.normalized_text, []).append(index)
     return {text: tuple(indexes) for text, indexes in grouped.items()}
+
+
+def _backend_family(candidate: AttemptCandidate) -> str:
+    """Return the independent evidence identity for one candidate.
+
+    Preprocessing variants and DPI changes remain auditable attempts, but they
+    do not count as independent backend evidence. Older adapters that do not
+    declare a family safely fall back to their adapter name.
+    """
+
+    family = candidate.extraction.backend_family.strip().lower()
+    return (
+        family
+        if family and family != "unknown"
+        else candidate.extraction.backend.strip().lower()
+    )
 
 
 def _winning_group(groups: dict[str, tuple[int, ...]]) -> tuple[str, tuple[int, ...]]:

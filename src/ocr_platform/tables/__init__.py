@@ -1,3 +1,4 @@
+from .paddle import PaddleStructureTableBackend
 from .ports import (
     TableBackend,
     TableCell,
@@ -15,6 +16,7 @@ __all__ = [
     "TableExtractionBackend",
     "TableResult",
     "UnavailableTableBackend",
+    "PaddleStructureTableBackend",
     "build_table_backend",
 ]
 

@@ -7,6 +7,7 @@ from ocr_platform.domain import (
     BlockType,
     CoordinateSpace,
     ExtractionMethod,
+    ReviewFlag,
     TextType,
 )
 from ocr_platform.errors import ProcessingError
@@ -245,6 +246,32 @@ def test_handwriting_region_does_not_fall_back_to_printed_ocr(tmp_path: Path) ->
     assert block.needs_review is True
     assert any("handwriting" in warning for warning in document.warnings)
     assert all(line.extraction.method != ExtractionMethod.OCR for line in block.lines)
+
+
+def test_table_backend_unavailable_preserves_text_with_review_flags(tmp_path: Path) -> None:
+    source_path = tmp_path / "table.png"
+    Image.new("RGB", (300, 180), "white").save(source_path, format="PNG")
+    table_region = LayoutRegion(
+        bbox=(0.0, 0.0, 300.0, 180.0),
+        block_type=BlockType.TABLE,
+        confidence=0.95,
+        reading_order=0,
+        route_hint=RegionRouteHint.TABLE,
+        text_type=TextType.PRINTED,
+    )
+    settings = Settings(environment="test", storage_root=tmp_path / "artifacts", max_retries=0)
+    document = DocumentPipeline(
+        settings,
+        backends=(PrintedBackend(),),
+        layout_service=FixedLayoutService((table_region,)),
+    ).process_path(source_path, filename="table.png", declared_content_type="image/png")
+
+    block = document.pages[0].blocks[0]
+    assert block.block_type is BlockType.TABLE
+    assert block.lines[0].raw_text == "شماره ABC123"
+    assert block.needs_review is True
+    assert ReviewFlag.TABLE_STRUCTURE_UNCERTAIN in block.uncertainty_flags
+    assert any("preserving text OCR" in warning for warning in document.warnings)
 
 
 def test_printed_backend_failure_is_preserved_as_review_warning(tmp_path: Path) -> None:

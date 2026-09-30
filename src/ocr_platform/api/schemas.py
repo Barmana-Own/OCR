@@ -47,3 +47,10 @@ class ProcessMetadata(BaseModel):
     accepted_filename: str = Field(min_length=1, max_length=255)
     content_type_detected: str
     source_checksum: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ReviewCorrectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    corrected_text: str = Field(min_length=1, max_length=100_000)
+    reason: str = Field(min_length=1, max_length=2048)

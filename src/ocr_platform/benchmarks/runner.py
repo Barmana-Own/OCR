@@ -66,6 +66,8 @@ def run_benchmark(
         {
             "manifest": dataset.manifest.model_dump(mode="json"),
             "ground_truth": dataset.ground_truth.model_dump(mode="json"),
+            "prediction_set": prediction_set,
+            "predictions": dataset.predictions[prediction_set].model_dump(mode="json"),
         }
     )
     selected_gates = quality_gates if quality_gates is not None else dataset.quality_gates

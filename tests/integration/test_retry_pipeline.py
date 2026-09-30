@@ -74,7 +74,8 @@ def test_low_confidence_output_retries_and_preserves_selected_attempt(tmp_path: 
     )
     line = document.pages[0].blocks[0].lines[0]
     assert backend.variants == ["source-render", "grayscale"]
-    assert line.verification_status == VerificationStatus.VERIFIED
+    assert line.verification_status == VerificationStatus.HUMAN_REVIEW_REQUIRED
+    assert line.needs_review is True
     assert line.extraction.preprocess_variant == "grayscale"
     assert line.language == "fa"
     assert line.script == "Arabic"

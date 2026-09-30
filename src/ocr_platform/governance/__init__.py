@@ -8,6 +8,7 @@ from .models import (
     ReviewFieldChange,
 )
 from .retention import is_retention_expired, retention_deadline
+from .review import ReviewCorrectionService
 
 __all__ = [
     "RetentionClass",
@@ -17,4 +18,5 @@ __all__ = [
     "ReviewFieldChange",
     "is_retention_expired",
     "retention_deadline",
+    "ReviewCorrectionService",
 ]

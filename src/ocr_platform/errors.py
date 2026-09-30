@@ -129,6 +129,14 @@ class ProcessingError(OcrPlatformError):
         super().__init__(ErrorDetails("processing_error", message, 500, retryable))
 
 
+class ProcessingTimeoutError(ProcessingError):
+    def __init__(
+        self,
+        message: str = "document processing exceeded its configured timeout",
+    ) -> None:
+        OcrPlatformError.__init__(self, ErrorDetails("processing_timeout", message, 504, True))
+
+
 class ArtifactStorageError(OcrPlatformError):
     def __init__(self, message: str) -> None:
         super().__init__(ErrorDetails("artifact_storage_error", message, 500))

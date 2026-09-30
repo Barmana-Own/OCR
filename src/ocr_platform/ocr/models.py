@@ -64,6 +64,7 @@ class OcrResult:
     lines: tuple[BackendTextLine, ...]
     runtime_metadata: tuple[tuple[str, str], ...] = ()
     warnings: tuple[str, ...] = ()
+    backend_family: str = "unknown"
 
 
 class OcrBackend(Protocol):

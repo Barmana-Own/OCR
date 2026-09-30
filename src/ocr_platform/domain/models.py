@@ -117,6 +117,7 @@ class ReviewFlag(StrEnum):
     BACKEND_FAILURE = "backend_failure"
     CAPABILITY_UNAVAILABLE = "capability_unavailable"
     TABLE_STRUCTURE_UNCERTAIN = "table_structure_uncertain"
+    INDEPENDENT_EVIDENCE_INSUFFICIENT = "independent_evidence_insufficient"
     MANUAL_REVIEW = "manual_review"
 
 
@@ -138,6 +139,7 @@ class VerificationReason(StrEnum):
     LOW_IMAGE_QUALITY = "low_image_quality"
     CONFIDENCE_SCALE_MISMATCH = "confidence_scale_mismatch"
     INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+    INSUFFICIENT_INDEPENDENT_EVIDENCE = "insufficient_independent_evidence"
     RETRY_EXHAUSTED = "retry_exhausted"
     CONSENSUS_ACROSS_VARIANTS = "consensus_across_variants"
     CONSENSUS_ACROSS_BACKENDS = "consensus_across_backends"
@@ -239,6 +241,7 @@ class ExtractionMetadata(BaseModel):
     region_scale: PositiveFloat = 1.0
     preprocess_variant: str = Field(min_length=1, max_length=256)
     confidence_scale: str = Field(default="backend_specific", min_length=1, max_length=128)
+    backend_family: str = Field(default="unknown", min_length=1, max_length=128)
     configuration_hash: Sha256 | None = None
     runtime_metadata: dict[str, str] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
@@ -300,6 +303,23 @@ class VerificationRecord(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class ReviewCorrection(BaseModel):
+    """Append-only human correction; the original OCR value remains immutable."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str = Field(min_length=1, max_length=128)
+    document_id: str = Field(min_length=1, max_length=128)
+    target_id: str = Field(min_length=1, max_length=128)
+    target_type: str = Field(min_length=1, max_length=64)
+    reviewer_id: str = Field(min_length=1, max_length=255)
+    previous_corrected_text: str | None = None
+    corrected_text: str = Field(max_length=100_000)
+    raw_text_unchanged: str
+    reason: str = Field(min_length=1, max_length=2048)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class TableCellResult(BaseModel):
     """Canonical structured evidence for one extracted table cell."""
 
@@ -327,6 +347,8 @@ class TableCellResult(BaseModel):
     verification_history: list[VerificationRecord] = Field(default_factory=list)
     review_artifact_uri: str | None = Field(default=None, max_length=2048)
     candidates: list[OCRCandidate] = Field(default_factory=list)
+    corrected_text: str | None = Field(default=None, max_length=100_000)
+    correction_history: list[ReviewCorrection] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def sync_review_state(self) -> TableCellResult:
@@ -368,6 +390,8 @@ class LineResult(BaseModel):
     candidates: list[OCRCandidate] = Field(default_factory=list)
     words: list[WordResult] = Field(default_factory=list)
     review_artifact_uri: str | None = Field(default=None, max_length=2048)
+    corrected_text: str | None = Field(default=None, max_length=100_000)
+    correction_history: list[ReviewCorrection] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def sync_review_state(self) -> LineResult:
@@ -561,6 +585,115 @@ class ProcessingManifest(BaseModel):
     generated_at: datetime | None = None
 
 
+class SemanticFieldType(StrEnum):
+    TEXT = "text"
+    INTEGER = "integer"
+    DECIMAL = "decimal"
+    DATE = "date"
+    IDENTIFIER = "identifier"
+    EMAIL = "email"
+    URL = "url"
+
+
+class EvidenceLink(BaseModel):
+    """Traceable source span used by a semantic extraction result."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    document_id: str = Field(min_length=1, max_length=128)
+    page_number: PositiveInt
+    source_uri: str | None = None
+    block_id: str | None = Field(default=None, max_length=128)
+    line_id: str | None = Field(default=None, max_length=128)
+    cell_id: str | None = Field(default=None, max_length=128)
+    bbox: BoundingBox
+    raw_text: str
+    normalized_text: str
+    verification_status: VerificationStatus = VerificationStatus.ACCEPTED
+
+    @model_validator(mode="after")
+    def require_span_identity(self) -> EvidenceLink:
+        if self.line_id is None and self.cell_id is None:
+            raise ValueError("semantic evidence must reference a line or table cell")
+        return self
+
+
+class FieldSchema(BaseModel):
+    """Explicit, non-generative schema constraint for one business field."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z][A-Za-z0-9_.-]*$")
+    value_type: SemanticFieldType = SemanticFieldType.TEXT
+    pattern: str | None = Field(default=None, max_length=512)
+    required: bool = False
+    block_types: list[BlockType] = Field(default_factory=list)
+
+    @field_validator("pattern")
+    @classmethod
+    def validate_pattern(cls, value: str | None) -> str | None:
+        if value is not None:
+            import re
+
+            try:
+                re.compile(value)
+            except re.error as exc:
+                raise ValueError("field schema pattern must be valid regex") from exc
+        return value
+
+
+class ExtractedField(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, protected_namespaces=())
+
+    name: str = Field(min_length=1, max_length=128)
+    raw_value: str
+    normalized_value: str
+    value_type: SemanticFieldType
+    confidence: Confidence | None = None
+    verification_status: VerificationStatus
+    needs_review: bool = False
+    evidence: list[EvidenceLink] = Field(min_length=1)
+    extraction_method: str = Field(min_length=1, max_length=128)
+    model: str = Field(min_length=1, max_length=256)
+    model_version: str = Field(min_length=1, max_length=128)
+    reason_codes: list[VerificationReason] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def sync_review_state(self) -> ExtractedField:
+        evidence_unverified = any(
+            item.verification_status != VerificationStatus.VERIFIED
+            for item in self.evidence
+        )
+        if self.needs_review or evidence_unverified:
+            object.__setattr__(self, "needs_review", True)
+        if self.needs_review and self.verification_status == VerificationStatus.ACCEPTED:
+            object.__setattr__(
+                self,
+                "verification_status",
+                VerificationStatus.HUMAN_REVIEW_REQUIRED,
+            )
+        return self
+
+
+class EntityResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str = Field(min_length=1, max_length=128)
+    entity_type: str = Field(min_length=1, max_length=128)
+    fields: list[ExtractedField] = Field(default_factory=list)
+    evidence: list[EvidenceLink] = Field(default_factory=list)
+
+
+class DocumentIntelligenceResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: str = Field(default="1.0.0", min_length=1, max_length=32)
+    document_id: str = Field(min_length=1, max_length=128)
+    fields: list[ExtractedField] = Field(default_factory=list)
+    entities: list[EntityResult] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class DocumentResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -579,6 +712,7 @@ class DocumentResult(BaseModel):
     quality: QualityAssessment | None = None
     processing_warnings: list[ProcessingWarning] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    intelligence: DocumentIntelligenceResult | None = None
 
     @model_validator(mode="after")
     def validate_page_numbers(self) -> DocumentResult:

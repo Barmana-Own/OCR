@@ -13,7 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from ocr_platform.config import Settings, get_settings
-from ocr_platform.database import FileDocumentRepository, FileJobRepository
+from ocr_platform.database import build_metadata_repositories
 from ocr_platform.dataset import DatasetExportPolicy
 from ocr_platform.domain import Document
 from ocr_platform.errors import (
@@ -24,17 +24,20 @@ from ocr_platform.errors import (
     JobNotFoundError,
     OcrPlatformError,
 )
+from ocr_platform.governance import ReviewCorrectionService
+from ocr_platform.intelligence import DocumentIntelligenceEngine, DocumentIntelligenceSchema
 from ocr_platform.observability.logging import configure_logging, get_logger, set_request_id
 from ocr_platform.observability.metrics import MetricsRegistry
 from ocr_platform.ocr.runtime import inspect_backend, resolve_device
 from ocr_platform.pipeline import DocumentPipeline
-from ocr_platform.storage import read_artifact_uri
+from ocr_platform.storage import build_artifact_store, read_artifact_uri
+from ocr_platform.workers import build_job_queue
 from ocr_platform.workers.models import JobRecord, ProcessingMode
 from ocr_platform.workers.orchestrator import DocumentJobService
 from ocr_platform.workers.policy import ProcessingModePolicy
 
 from .auth import build_api_key_dependency
-from .schemas import ErrorResponse, HealthResponse, JobSubmissionResponse
+from .schemas import ErrorResponse, HealthResponse, JobSubmissionResponse, ReviewCorrectionRequest
 from .uploads import (
     read_upload_bytes,
     validate_filename,
@@ -56,7 +59,11 @@ def create_app(
         allow_sensitive_debug_logging=selected_settings.allow_sensitive_debug_logging
     )
     metrics = MetricsRegistry()
-    selected_pipeline = pipeline or DocumentPipeline(selected_settings, metrics=metrics)
+    selected_pipeline = pipeline or DocumentPipeline(
+        selected_settings,
+        artifact_store=build_artifact_store(selected_settings),
+        metrics=metrics,
+    )
     selected_store = getattr(selected_pipeline, "store", None)
     if pipeline is not None:
         pipeline_metrics = getattr(selected_pipeline, "metrics", None)
@@ -84,12 +91,14 @@ def create_app(
                 del mode
                 return selected_pipeline
 
+        document_repository, job_repository = build_metadata_repositories(selected_settings)
         selected_job_service = DocumentJobService(
             selected_settings,
             pipeline_factory=pipeline_factory,
             artifact_store=selected_store,
-            job_repository=FileJobRepository(selected_settings.storage_root),
-            document_repository=FileDocumentRepository(selected_settings.storage_root),
+            job_repository=job_repository,
+            document_repository=document_repository,
+            job_queue=build_job_queue(selected_settings),
             metrics=metrics,
         )
     else:
@@ -286,6 +295,46 @@ def create_app(
             policy=selected_policy,
         )
         return exported.manifest
+
+    @application.post("/v1/documents/{document_id}/review/{target_id}", response_model=Document)
+    async def correct_review_target(
+        request: Request,
+        document_id: str,
+        target_id: str,
+        correction: ReviewCorrectionRequest,
+        reviewer: Annotated[str, Depends(api_key_dependency)],
+    ) -> Document:
+        _validate_resource_id(document_id, resource="document")
+        _validate_resource_id(target_id, resource="review_target")
+        request.state.document_id = document_id
+        document = selected_job_service.get_document(document_id)
+        revised = ReviewCorrectionService().correct(
+            document,
+            target_id=target_id,
+            corrected_text=correction.corrected_text,
+            reviewer_id=reviewer,
+            reason=correction.reason,
+        )
+        selected_job_service.document_repository.save(revised)
+        return revised
+
+    @application.post(
+        "/v1/documents/{document_id}/intelligence",
+        response_model=Document,
+    )
+    async def extract_intelligence(
+        request: Request,
+        document_id: str,
+        schema: DocumentIntelligenceSchema,
+        _: Annotated[str, Depends(api_key_dependency)],
+    ) -> Document:
+        _validate_resource_id(document_id, resource="document")
+        request.state.document_id = document_id
+        document = selected_job_service.get_document(document_id)
+        intelligence = DocumentIntelligenceEngine().extract(document, schema)
+        revised = document.model_copy(update={"intelligence": intelligence})
+        selected_job_service.document_repository.save(revised)
+        return revised
 
     @application.get("/v1/documents/{document_id}/pages/{page}/image")
     async def get_page_image(

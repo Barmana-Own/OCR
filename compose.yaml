@@ -4,6 +4,7 @@ services:
       context: .
       args:
         PYTHON_BASE_IMAGE: ${OCR_PYTHON_BASE_IMAGE:-python:3.12-slim}
+        OCR_EXTRAS: ${OCR_EXTRAS:-}
     ports:
       - "8000:8000"
     environment:
@@ -17,6 +18,9 @@ services:
       OCR_MODEL_LOAD_MODE: ${OCR_MODEL_LOAD_MODE:-lazy}
       OCR_GPU_INFERENCE_CONCURRENCY: ${OCR_GPU_INFERENCE_CONCURRENCY:-1}
       OCR_MAX_PAGES_IN_FLIGHT: ${OCR_MAX_PAGES_IN_FLIGHT:-1}
+      OCR_PROCESSING_TIMEOUT_SECONDS: ${OCR_PROCESSING_TIMEOUT_SECONDS:-300}
+      OCR_MAX_UPLOAD_BYTES: ${OCR_MAX_UPLOAD_BYTES:-52428800}
+      OCR_MAX_RENDER_PIXELS: ${OCR_MAX_RENDER_PIXELS:-50000000}
     volumes:
       - ocr-artifacts:/var/lib/ocr-platform/artifacts
       - ocr-tmp:/var/lib/ocr-platform/tmp
@@ -30,8 +34,47 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # Enable with `docker compose --profile distributed up` after supplying
+  # Redis/PostgreSQL/S3-compatible service URLs and mounting model weights.
+  ocr-worker:
+    profiles: ["distributed"]
+    build:
+      context: .
+      args:
+        PYTHON_BASE_IMAGE: ${OCR_PYTHON_BASE_IMAGE:-python:3.12-slim}
+        OCR_EXTRAS: ${OCR_EXTRAS:-distributed}
+    command: ["python", "-m", "ocr_platform.worker"]
+    environment:
+      OCR_ENVIRONMENT: ${OCR_ENVIRONMENT:-staging}
+      OCR_QUEUE_BACKEND: redis
+      OCR_REDIS_URL: ${OCR_REDIS_URL:-}
+      OCR_REDIS_QUEUE_NAME: ${OCR_REDIS_QUEUE_NAME:-ocr:jobs}
+      OCR_METADATA_BACKEND: postgres
+      OCR_POSTGRES_DSN: ${OCR_POSTGRES_DSN:-}
+      OCR_POSTGRES_SCHEMA: ${OCR_POSTGRES_SCHEMA:-public}
+      OCR_ARTIFACT_STORE_BACKEND: s3
+      OCR_ARTIFACT_BUCKET: ${OCR_ARTIFACT_BUCKET:-ocr-artifacts}
+      OCR_S3_ENDPOINT_URL: ${OCR_S3_ENDPOINT_URL:-}
+      OCR_S3_PREFIX: ${OCR_S3_PREFIX:-ocr}
+      OCR_API_KEYS: ${OCR_API_KEYS:-}
+      OCR_REQUIRE_AUTH: ${OCR_REQUIRE_AUTH:-true}
+      OCR_PROCESSING_TIMEOUT_SECONDS: ${OCR_PROCESSING_TIMEOUT_SECONDS:-300}
+      OCR_STORAGE_ROOT: /var/lib/ocr-platform/artifacts
+      OCR_TEMPORARY_WORKSPACE: /var/lib/ocr-platform/tmp
+      OCR_EXPORT_STAGING_WORKSPACE: /var/lib/ocr-platform/tmp/exports
+      OCR_MODEL_PATH: /var/lib/ocr-platform/models
+      OCR_CACHE_PATH: /var/lib/ocr-platform/cache
+    volumes:
+      - ocr-worker-tmp:/var/lib/ocr-platform/tmp
+      - ocr-worker-models:/var/lib/ocr-platform/models
+      - ocr-worker-cache:/var/lib/ocr-platform/cache
+    restart: unless-stopped
+
 volumes:
   ocr-artifacts:
   ocr-tmp:
   ocr-models:
   ocr-cache:
+  ocr-worker-tmp:
+  ocr-worker-models:
+  ocr-worker-cache:

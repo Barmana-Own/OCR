@@ -5,6 +5,7 @@ from __future__ import annotations
 from ocr_platform.config import Settings
 from ocr_platform.ocr.models import OcrBackend
 
+from .paddle import PaddleOcrBackend
 from .tesseract import TesseractBackend
 from .unavailable import UnavailableOcrBackend
 
@@ -21,6 +22,14 @@ def build_ocr_backends(settings: Settings) -> tuple[OcrBackend, ...]:
                 TesseractBackend(
                     language=language,
                     timeout_seconds=settings.ocr_backend_timeout_seconds,
+                )
+            )
+        elif name in {"paddle", "paddleocr"}:
+            backends.append(
+                PaddleOcrBackend(
+                    language=language,
+                    device=settings.device,
+                    model_path=str(settings.model_path),
                 )
             )
         else:

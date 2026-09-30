@@ -156,6 +156,63 @@ paths:
                 type: object
         "404":
           $ref: "#/components/responses/NotFound"
+  /v1/documents/{document_id}/review/{target_id}:
+    post:
+      operationId: correctReviewTarget
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+        - in: path
+          name: target_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewCorrectionRequest"
+      responses:
+        "200":
+          description: Canonical document with an appended correction revision
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /v1/documents/{document_id}/intelligence:
+    post:
+      operationId: extractIntelligence
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentIntelligenceSchema"
+      responses:
+        "200":
+          description: Canonical document with schema-driven evidence-linked fields
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
   /v1/documents/{document_id}/pages/{page}/image:
     get:
       operationId: getPageImage
@@ -404,6 +461,48 @@ components:
           type: string
         document_id:
           type: string
+    ReviewCorrectionRequest:
+      type: object
+      additionalProperties: false
+      required: [corrected_text, reason]
+      properties:
+        corrected_text:
+          type: string
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1024
+    DocumentIntelligenceSchema:
+      type: object
+      additionalProperties: false
+      required: [name, fields]
+      properties:
+        schema_version:
+          type: string
+          default: "1.0.0"
+        name:
+          type: string
+          minLength: 1
+        fields:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name]
+            properties:
+              name:
+                type: string
+              value_type:
+                type: string
+                enum: [text, integer, decimal, date, identifier, email, url]
+              pattern:
+                type: string
+              required:
+                type: boolean
+              block_types:
+                type: array
+                items:
+                  type: string
   responses:
     AuthenticationRequired:
       description: Authentication required

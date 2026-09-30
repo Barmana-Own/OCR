@@ -5,11 +5,11 @@
 | پروژه | خط لوله OCR و تولید داده اسناد با دقت و قابلیت ردیابی بالا |
 | نوع گزارش | تحویل فنی و مهندسی |
 | زبان | فارسی |
-| تاریخ جلالی | ۱۴۰۵-۰۷-۰۵ |
-| تاریخ میلادی | ۲۰۲۶-۰۹-۲۷ |
-| نسخه | ۰.۱.۰ |
+| تاریخ جلالی | ۱۴۰۵-۰۷-۰۸ |
+| تاریخ میلادی | ۲۰۲۶-۰۹-۳۰ |
+| نسخه | برنامه پیاده‌سازی افزایشی ۰.۱.۰ |
 | مخزن | `E:\OCR` |
-| وضعیت تحویل | پیاده‌سازی دوازده‌مرحله‌ای به‌همراه ممیزی یکپارچه‌سازی Phase 13 تکمیل شد؛ استقرار خارجی انجام نشده است |
+| وضعیت تحویل | پیاده‌سازی افزایشی یکپارچه شد؛ اعتبارسنجی خارجی مدل‌ها و زیرساخت باقی مانده است |
 
 ## دامنه و معماری
 
@@ -35,7 +35,67 @@
 - Phase 13 یک ممیزی قطعی و غیرحساس انتهابه‌انتها با ۱۱ سناریوی نماینده، اعتبارسنجی schema استاندارد، بررسی منشأ خط/سلول، بازتولیدپذیری متن خام/نرمال‌شده، مسیر ترکیبی چاپی/دست‌خط، تشدید و نگاشت متن ریز، نگهداری candidateها، وضعیت عدم‌قطعیت، خروجی قطعی و اسکن ضدالگو/امنیت اضافه می‌کند. گزارش آن در `docs/final-audit.md` تولید شده است.
 - منشأ مدل در ممیزی: موجودی قابلیت تولید، `tesseract/tesseract-lstm@external` را در دسترس ندانست، `heuristic-projection/pillow-projection@1` را در دسترس گزارش کرد و آداپترهای HTR/جدول را غیرفعال گزارش کرد؛ benchmark مصنوعی نسخه‌های `embedded-text@1`، `fixture@1` و `synthetic-primary` را ثبت کرد.
 
-## وضعیت مراحل
+## برنامه پیاده‌سازی افزایشی
+
+موارد زیر در همان ماژولارمونولیت پیاده‌سازی شده‌اند. در دسترس بودن آداپترها و دقت مدل‌ها به محیط وابسته است و این گزارش ادعای کیفیت مدل ارائه نمی‌دهد.
+
+| کارگروه | وضعیت | شاهد |
+|---|---|---|
+| ۰۱ ایمنی راستی‌آزمایی و خروجی | IMPLEMENTED | شواهد خانواده مستقل backend، خروجی ایمن برای بازبینی و اصلاحات الحاقی |
+| ۰۲ استخراج جدول | IMPLEMENTED | آداپتر اختیاری PP-Structure، نگاشت typed سلول و fallback OCR چاپی |
+| ۰۳ OCR چاپی ثانویه | IMPLEMENTED | آداپتر lazy PaddleOCR با پشتیبانی از شکل‌های خروجی ۲.x و ۳.x |
+| ۰۴ HTR دست‌خط | IMPLEMENTED | آداپتر Transformers فقط با مدل محلی و خطای صریح نبود قابلیت |
+| ۰۵ پیش‌پردازش پیشرفته | IMPLEMENTED | انتخاب profile نام‌گذاری‌شده و variant متن ریز با منشأ کامل |
+| ۰۶ پشتیبانی DOCX | IMPLEMENTED | پاراگراف و page break native با اعتبارسنجی signature و مسیر تصویر |
+| ۰۷ پشتیبانی XLSX/XLS | IMPLEMENTED | سلول native، shared string، مختصات و reader اختیاری XLS قدیمی |
+| ۰۸ پشتیبانی PPTX | IMPLEMENTED | متن native اسلاید، هندسه و مسیر تصویرهای جاسازی‌شده |
+| ۰۹ هوش اسنادی | IMPLEMENTED | schemaهای typed فیلد/موجودیت با پیوند evidence به span و cell منبع |
+| ۱۰ بازبینی و اصلاح | IMPLEMENTED | اصلاحات audit‌شده و الحاقی با متن خام تغییرناپذیر |
+| ۱۱ اجرای benchmark واقعی | IMPLEMENTED | فرمان پیش‌بینی pipeline با کنترل ground truth خارجی |
+| ۱۲ سخت‌سازی Docker و timeout | IMPLEMENTED | extraهای اختیاری، image با کاربر non-root و محدودیت timeout/منابع |
+| ۱۳ backendهای تولید توزیع‌شده | IMPLEMENTED | metadata در PostgreSQL، artifact در S3، صف Redis با acknowledgement و entrypoint worker |
+| ۱۴ قالب‌های متنی افزوده | IMPLEMENTED | readerهای native با signature برای TXT، CSV، JSON و HTML |
+
+## فایل‌ها و مؤلفه‌های اصلی
+
+- تنظیمات و استقرار: pyproject.toml، .env.example، Dockerfile، compose.yaml و README.md.
+- ورود منبع: src/ocr_platform/ingestion/source.py، service.py، office_reader.py و text_reader.py.
+- OCR و ساختار: src/ocr_platform/ocr/backends/paddle.py، tables/paddle.py، handwriting/transformers.py، pipeline.py و verification/engine.py.
+- حاکمیت و هوش اسنادی: src/ocr_platform/governance/review.py، intelligence/models.py، intelligence/engine.py و dataset/exporter.py.
+- آداپترهای توزیع‌شده: database/postgres.py، storage/s3.py، workers/redis_queue.py، workers/factory.py و worker.py.
+- benchmark و آزمون‌ها: benchmarks/predict.py، benchmarks/run.py، tests/ingestion/test_office_and_text_formats.py، tests/ocr/test_optional_adapters.py، tests/intelligence/ و tests/storage/test_distributed_adapters.py.
+- مستندات و state: docs/phase13-program.md، docs/openapi.yaml، project-state.json، release-manifest.json و گزارش‌های دوزبانه.
+
+## تصمیم‌های معماری
+
+- نصب پایه بدون بسته‌های سنگین مدل یا دانلود خودکار قابل استفاده باقی می‌ماند.
+- اتصال‌های OCR، HTR، جدول، metadata، artifact و queue پشت پورت‌های typed و آداپترهای lazy قرار دارند.
+- متن native و ساختار Office پیش از OCR تصویری استخراج می‌شوند و نواحی تصویری نیازمند OCR بعدی به‌صورت صریح حفظ می‌شوند.
+- سیاست بازبینی و خروجی هم وضعیت و هم پرچم بازبینی را بررسی می‌کند تا داده نامطمئن وارد خروجی verified-only نشود.
+- secretها از hash تنظیمات حذف شده‌اند و شناسه‌ها و نام artifactها محدود و قطعی هستند.
+- انتخاب صف، metadata و object store از طریق تنظیمات محیطی صریح است و حالت پیش‌فرض همان ماژولارمونولیت محلی است.
+
+## شواهد اعتبارسنجی فعلی
+
+| بررسی | نتیجه |
+|---|---|
+| PYTHONPATH=src pytest -q | PASS — ۲۳۵ موفق؛ دو هشدار deprecation وابستگی |
+| python -m compileall -q src tests | PASS |
+| ruff check src tests scripts | PASS |
+| python -m pip check | PASS |
+| python -m build --no-isolation | PASS |
+| docker compose config | PASS |
+| docker compose --profile distributed config | PASS |
+| اعتبارسنجی ساختاری OpenAPI | PASS |
+| بازبینی الگوهای راز | PASS — الگوی کلید خصوصی یا token شناخته‌شده یافت نشد |
+| smoke مدل واقعی و runtimeهای HTR/جدول | NOT_RUN — runtime، وزن مدل یا executable اختیاری در دسترس نبود |
+| benchmark دقت با ground truth خارجی | NOT_RUN — corpus خارجی برچسب‌دار و مجاز در مخزن وجود ندارد |
+| pip-audit | NOT_RUN — ابزار در دسترس نبود |
+| بررسی static type | NOT_RUN — checker تنظیم‌شده در دسترس نبود |
+| build و smoke اجرای Docker | NOT_RUN — Docker daemon در دسترس نبود |
+| استقرار خارجی | NOT_PERFORMED — هدف و اعتبارنامه‌ای مجاز نشده است |
+
+## وضعیت baseline دوازده‌مرحله‌ای
 
 | مرحله | وضعیت | شواهد |
 |---|---|---|
@@ -53,7 +113,7 @@
 | ۱۲ بازبینی نهایی | PASS | ردیابی نیازمندی، یکپارچگی، امنیت، مشاهده‌پذیری و انتشار نهایی |
 | ممیزی یکپارچه‌سازی Phase 13 | PASS | ۱۱/۱۱ سناریو موفق؛ ۱۸ خط و ۴ سلول؛ بررسی منشأ، schema، مسیرهای ترکیبی، عدم‌قطعیت، متن ریز، خروجی قطعی و ضدالگو موفق |
 
-## شواهد اعتبارسنجی
+## شواهد اعتبارسنجی baseline قبلی
 
 | بررسی | نتیجه |
 |---|---|

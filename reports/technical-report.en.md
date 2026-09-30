@@ -5,11 +5,11 @@
 | Project | High-Accuracy Universal OCR & Document Dataset Pipeline |
 | Report type | Technical engineering handoff |
 | Language | English |
-| Jalali date | 1405-07-05 |
-| Gregorian date | 2026-09-27 |
-| Release | 0.1.0 |
+| Jalali date | 1405-07-08 |
+| Gregorian date | 2026-09-30 |
+| Release | 0.1.0 incremental implementation program |
 | Repository | `E:\OCR` |
-| Delivery status | Twelve-stage implementation plus Phase 13 integration audit completed; external deployment not performed |
+| Delivery status | Incremental implementation integrated; external model and infrastructure validation remains pending |
 
 ## Scope and architecture
 
@@ -35,7 +35,67 @@ The canonical hierarchy is `Document -> Page -> Block -> Line -> Word`. Raw and 
 - Phase 13 adds a deterministic synthetic end-to-end audit covering 11 representative scenarios, canonical schema validation, line/cell provenance checks, raw-versus-normalized reproducibility, mixed printed/handwritten routing, tiny-text escalation/mapping, retained candidates, uncertainty states, deterministic exports, and repository anti-pattern/security scans. The audit produced `docs/final-audit.md`.
 - Audit model provenance: production capability inventory reported `tesseract/tesseract-lstm@external` unavailable, `heuristic-projection/pillow-projection@1` available, and HTR/table capability adapters unavailable; the synthetic benchmark recorded `embedded-text@1`, `fixture@1`, and `synthetic-primary`.
 
-## Stage status
+## Incremental implementation program
+
+The following workstreams are implemented in the existing modular monolith. Adapter availability and accuracy remain environment-dependent and are not represented as model-quality claims.
+
+| Workstream | State | Evidence |
+|---|---|---|
+| 01 Verification and export safety | IMPLEMENTED | Independent backend-family evidence, review-safe exports, append-only corrections |
+| 02 Table extraction | IMPLEMENTED | Optional PP-Structure adapter, typed cell mapping, printed-OCR fallback |
+| 03 Secondary printed OCR | IMPLEMENTED | Lazy PaddleOCR adapter with 2.x/3.x result-shape compatibility |
+| 04 Handwriting HTR | IMPLEMENTED | Local-only Transformers adapter with explicit unavailable capability errors |
+| 05 Advanced preprocessing | IMPLEMENTED | Named profile selection and provenance-bearing tiny-text variants |
+| 06 DOCX support | IMPLEMENTED | Signature-validated native paragraphs, page breaks, and visual-region routing |
+| 07 XLSX/XLS support | IMPLEMENTED | Native cells, shared strings, coordinates, and optional legacy XLS reader |
+| 08 PPTX support | IMPLEMENTED | Native slide text, geometry, and embedded-image routing |
+| 09 Document intelligence | IMPLEMENTED | Typed field/entity schemas with source-span and cell evidence links |
+| 10 Review and correction | IMPLEMENTED | Append-only audited corrections with immutable raw text |
+| 11 Real benchmark execution | IMPLEMENTED | Pipeline prediction command with external-ground-truth guard |
+| 12 Docker and timeout hardening | IMPLEMENTED | Optional extras, non-root image, bounded timeout and resource settings |
+| 13 Distributed production backends | IMPLEMENTED | PostgreSQL metadata, S3-compatible artifacts, acknowledged Redis in-flight queue, worker entrypoint |
+| 14 Additional document formats | IMPLEMENTED | Signature-validated TXT, CSV, JSON, and HTML native readers |
+
+## Principal files and components
+
+- Configuration and deployment: pyproject.toml, .env.example, Dockerfile, compose.yaml, README.md.
+- Ingestion: src/ocr_platform/ingestion/source.py, service.py, office_reader.py, and text_reader.py.
+- OCR and structure: src/ocr_platform/ocr/backends/paddle.py, tables/paddle.py, handwriting/transformers.py, pipeline.py, and verification/engine.py.
+- Governance and intelligence: src/ocr_platform/governance/review.py, intelligence/models.py, intelligence/engine.py, and dataset/exporter.py.
+- Distributed adapters: database/postgres.py, storage/s3.py, workers/redis_queue.py, workers/factory.py, and worker.py.
+- Benchmarks and tests: benchmarks/predict.py, benchmarks/run.py, tests/ingestion/test_office_and_text_formats.py, tests/ocr/test_optional_adapters.py, tests/intelligence/, and tests/storage/test_distributed_adapters.py.
+- Documentation and state: docs/phase13-program.md, docs/openapi.yaml, project-state.json, release-manifest.json, and the bilingual reports.
+
+## Architecture decisions
+
+- The base installation remains usable without heavyweight model packages or downloads.
+- Provider-specific OCR, HTR, table, metadata, artifact, and queue integrations remain behind typed ports and lazy adapters.
+- Native text and Office structure are extracted before raster OCR; embedded visual regions retain an explicit later OCR requirement.
+- Review and export policy is status-driven and also checks the review flag, preventing uncertain records from entering verified-only datasets.
+- Configuration hashes omit secrets, and source/artifact identifiers are bounded and deterministic.
+- Queue, metadata, and object-store selection is explicit through environment settings; the default remains a local modular monolith.
+
+## Current validation evidence
+
+| Check | Result |
+|---|---|
+| PYTHONPATH=src pytest -q | PASS — 235 passed; two dependency deprecation warnings |
+| python -m compileall -q src tests | PASS |
+| ruff check src tests scripts | PASS |
+| python -m pip check | PASS |
+| python -m build --no-isolation | PASS |
+| docker compose config | PASS |
+| docker compose --profile distributed config | PASS |
+| OpenAPI structure validation | PASS |
+| Secret-pattern review | PASS — no private-key or known-token pattern found |
+| Real model and HTR/table runtime smoke | NOT_RUN — optional runtimes, weights, or executables unavailable |
+| External-ground-truth accuracy benchmark | NOT_RUN — no permitted labeled external corpus is included |
+| pip-audit | NOT_RUN — tool unavailable |
+| Static type checker | NOT_RUN — no configured checker was available |
+| Docker build and runtime smoke | NOT_RUN — Docker daemon unavailable |
+| External deployment | NOT_PERFORMED — no target or credentials authorized |
+
+## Prior twelve-stage baseline status
 
 | Stage | Status | Evidence |
 |---|---|---|
@@ -53,7 +113,7 @@ The canonical hierarchy is `Document -> Page -> Block -> Line -> Word`. Raw and 
 | 12 Final review | PASS | final traceability, integrity, security, observability, and release checks |
 | Phase 13 final integration audit | PASS | 11/11 scenarios passed; 18 lines and 4 table cells; provenance, schema, mixed-route, uncertainty, tiny-text, deterministic-export, and anti-pattern checks passed |
 
-## Validation evidence
+## Historical baseline validation evidence
 
 | Check | Result |
 |---|---|

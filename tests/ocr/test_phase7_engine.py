@@ -72,7 +72,7 @@ def test_single_digit_disagreement_requires_review_and_is_explained() -> None:
     assert VerificationReason.DIGIT_DISAGREEMENT in outcome.reason_codes
 
 
-def test_low_confidence_exact_multipass_consensus_can_verify() -> None:
+def test_low_confidence_same_backend_multipass_consensus_requires_review() -> None:
     outcome = VerificationEngine(
         VerificationPolicy(
             confidence_threshold=0.85,
@@ -87,9 +87,11 @@ def test_low_confidence_exact_multipass_consensus_can_verify() -> None:
         ]
     )
 
-    assert outcome.status == VerificationStatus.VERIFIED
+    assert outcome.status == VerificationStatus.HUMAN_REVIEW_REQUIRED
     assert VerificationReason.LOW_PRIMARY_CONFIDENCE in outcome.reason_codes
     assert VerificationReason.CONSENSUS_ACROSS_VARIANTS in outcome.reason_codes
+    assert VerificationReason.INSUFFICIENT_INDEPENDENT_EVIDENCE in outcome.reason_codes
+    assert ReviewFlag.INDEPENDENT_EVIDENCE_INSUFFICIENT in outcome.flags
 
 
 def test_verified_threshold_can_be_used_without_consensus_when_policy_allows_it() -> None:
@@ -110,7 +112,7 @@ def test_high_confidence_malformed_candidate_is_not_accepted() -> None:
     assert VerificationReason.SUSPICIOUS_CHARACTERS in outcome.reason_codes
 
 
-def test_tiny_text_high_dpi_improvement_is_verified_when_passes_agree() -> None:
+def test_tiny_text_high_dpi_agreement_without_independent_backend_requires_review() -> None:
     outcome = VerificationEngine(VerificationPolicy()).evaluate(
         [
             candidate("۱۲۳۴۵", confidence=0.41, tiny_text=True, variant="source-render"),
@@ -118,9 +120,10 @@ def test_tiny_text_high_dpi_improvement_is_verified_when_passes_agree() -> None:
         ]
     )
 
-    assert outcome.status == VerificationStatus.VERIFIED
+    assert outcome.status == VerificationStatus.HUMAN_REVIEW_REQUIRED
     assert VerificationReason.TINY_TEXT in outcome.reason_codes
     assert VerificationReason.CONSENSUS_ACROSS_VARIANTS in outcome.reason_codes
+    assert VerificationReason.INSUFFICIENT_INDEPENDENT_EVIDENCE in outcome.reason_codes
 
 
 def test_unresolved_disagreement_retains_all_attempts_and_is_uncertain() -> None:

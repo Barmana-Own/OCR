@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -56,9 +57,16 @@ def _document(document_id: str, *, warnings: list[str] | None = None) -> Documen
 
 
 class RecordingPipeline:
-    def __init__(self, *, failure: bool = False, warnings: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        failure: bool = False,
+        warnings: list[str] | None = None,
+        delay_seconds: float = 0.0,
+    ) -> None:
         self.failure = failure
         self.warnings = warnings or []
+        self.delay_seconds = delay_seconds
         self.calls = 0
 
     def process_path(
@@ -71,6 +79,8 @@ class RecordingPipeline:
         progress_callback=None,
     ) -> Document:
         self.calls += 1
+        if self.delay_seconds:
+            time.sleep(self.delay_seconds)
         if progress_callback is not None:
             progress_callback(1, 1, "ocr")
         if self.failure:
@@ -181,3 +191,32 @@ def test_job_service_exposes_failure_and_warning_states(
     if failure:
         assert job.error is not None
         assert job.error.code == "ocr_backend_failure"
+
+
+def test_processing_timeout_is_enforced_by_job_service(tmp_path: Path) -> None:
+    settings = Settings(
+        environment="test",
+        storage_root=tmp_path / "artifacts",
+        temporary_workspace=tmp_path / "tmp",
+        worker_count=1,
+        max_queued_jobs=4,
+        processing_timeout_seconds=1,
+    )
+    service = DocumentJobService(
+        settings,
+        pipeline=RecordingPipeline(delay_seconds=1.1),
+        artifact_store=LocalArtifactStore(settings.storage_root),
+        job_repository=InMemoryJobRepository(),
+        document_repository=InMemoryDocumentRepository(),
+    )
+    try:
+        submission = service.submit_bytes(
+            _png_bytes(), filename="source.png", content_type="image/png", mode="fast"
+        )
+        job = service.wait_for(submission.job.job_id, timeout=5)
+    finally:
+        service.shutdown()
+
+    assert job.status is JobStatus.FAILED
+    assert job.error is not None
+    assert job.error.code == "processing_timeout"

@@ -9,6 +9,8 @@ from ocr_platform.domain import PolygonPoint
 from ocr_platform.errors import InvalidDocumentError
 
 from .geometry import CoordinateMapping
+from .operations import apply_operation
+from .profiles import get_profile
 
 
 @dataclass(frozen=True)
@@ -23,6 +25,7 @@ class PreparedImage:
     scale: int
     variant: str
     mapping: CoordinateMapping | None = None
+    profile_name: str | None = None
 
 
 def prepare_image(
@@ -34,6 +37,8 @@ def prepare_image(
     variant: str,
     max_crop_pixels: int,
     max_region_scale: int,
+    profile_name: str | None = None,
+    enabled_profiles: tuple[str, ...] | None = None,
 ) -> PreparedImage:
     """Crop, optionally scale, and safely preprocess an OCR region.
 
@@ -84,6 +89,34 @@ def prepare_image(
                 if resized_width * resized_height > max_crop_pixels:
                     raise InvalidDocumentError("region scale exceeds configured crop pixel limit")
                 cropped = cropped.resize((resized_width, resized_height), Image.Resampling.LANCZOS)
+            mapping = CoordinateMapping.for_source(
+                source_width=page_width,
+                source_height=page_height,
+                output_width=cropped.width,
+                output_height=cropped.height,
+                output_to_source=(
+                    1.0 / scale,
+                    0.0,
+                    float(left),
+                    0.0,
+                    1.0 / scale,
+                    float(top),
+                    0.0,
+                    0.0,
+                    1.0,
+                ),
+            )
+            if profile_name is not None:
+                profile = get_profile(profile_name, enabled=enabled_profiles)
+                for step in profile.steps:
+                    applied = apply_operation(
+                        cropped,
+                        step.operation,
+                        parameters=step.parameter_dict(),
+                        max_output_pixels=max_crop_pixels,
+                    )
+                    cropped = applied.image
+                    mapping = mapping.compose(applied.mapping)
             buffer = BytesIO()
             cropped.save(buffer, format="PNG", optimize=False)
             return PreparedImage(
@@ -94,23 +127,8 @@ def prepare_image(
                 offset_y=top,
                 scale=scale,
                 variant=variant,
-                mapping=CoordinateMapping.for_source(
-                    source_width=page_width,
-                    source_height=page_height,
-                    output_width=cropped.width,
-                    output_height=cropped.height,
-                    output_to_source=(
-                        1.0 / scale,
-                        0.0,
-                        float(left),
-                        0.0,
-                        1.0 / scale,
-                        float(top),
-                        0.0,
-                        0.0,
-                        1.0,
-                    ),
-                ),
+                mapping=mapping,
+                profile_name=profile_name,
             )
     except InvalidDocumentError:
         raise

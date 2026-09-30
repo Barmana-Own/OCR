@@ -24,6 +24,7 @@ class TesseractBackend:
     model = "tesseract-lstm"
     model_version = "external"
     confidence_scale = "tesseract_0_100"
+    backend_family = "tesseract"
 
     def __init__(
         self,
@@ -99,6 +100,7 @@ class TesseractBackend:
                     ("model_identifier", self.model),
                 ),
                 warnings=(f"tesseract: {stderr[:512]}",) if stderr else (),
+                backend_family=self.backend_family,
             )
         except subprocess.TimeoutExpired as exc:
             raise ProcessingError("Tesseract timed out", retryable=True) from exc

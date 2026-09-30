@@ -70,8 +70,8 @@ from ocr_platform.quality.metrics import disagreement_rate, mean_confidence
 from ocr_platform.storage import (
     ArtifactLayout,
     ArtifactStore,
-    LocalArtifactStore,
     StoredArtifact,
+    build_artifact_store,
     sha256_bytes,
     sha256_file,
 )
@@ -108,16 +108,27 @@ class DocumentPipeline:
         self.settings = settings
         self.metrics = metrics or MetricsRegistry()
         self.inference_gate = InferenceGate(settings.gpu_inference_concurrency)
-        self.store = artifact_store or LocalArtifactStore(settings.storage_root)
+        self.store = artifact_store or build_artifact_store(settings)
         self.layout = ArtifactLayout()
         self.readers = reader_service or DocumentReaderService(settings)
         self.backends = tuple(backends) if backends is not None else build_ocr_backends(settings)
         self.handwriting_backends = (
             tuple(handwriting_backends)
             if handwriting_backends is not None
-            else (build_handwriting_backend(settings.handwriting_backend),)
+            else (
+                build_handwriting_backend(
+                    settings.handwriting_backend,
+                    model_path=str(settings.handwriting_model_path),
+                    device=settings.device,
+                ),
+            )
         )
-        self.table_backend = table_backend or build_table_backend(settings.table_backend)
+        self.table_backend = table_backend or build_table_backend(
+            settings.table_backend,
+            language="+".join(settings.ocr_languages),
+            device=settings.device,
+            model_path=str(settings.model_path),
+        )
         self.region_router = region_router or RegionRouter()
         self.router = router or PageRouter()
         self.layout_service = layout_service or LayoutAnalysisService(
@@ -137,6 +148,12 @@ class DocumentPipeline:
                 require_consensus_for_verified=settings.verification_require_consensus_for_verified,
                 allow_consensus_override_low_confidence=(
                     settings.verification_allow_consensus_override_low_confidence
+                ),
+                require_independent_backend_consensus=(
+                    settings.verification_require_independent_backend_consensus
+                ),
+                min_independent_backend_families=(
+                    settings.verification_min_independent_backend_families
                 ),
                 min_text_length=settings.verification_min_text_length,
                 max_suspicious_char_rate=settings.verification_max_suspicious_char_rate,
@@ -531,19 +548,48 @@ class DocumentPipeline:
                 )
                 warnings.extend(region_warnings)
                 if table_result is None:
-                    warnings.append(f"{region.region_id}: no table backend produced a result")
-                    blocks.append(
-                        self._empty_block(
+                    warnings.append(
+                        f"{region.region_id}: table structure unavailable; preserving text OCR"
+                    )
+                    fallback_results, fallback_warnings = self._recognize_region(
+                        image_bytes,
+                        rendered_page,
+                        region,
+                        backends=self.backends,
+                    )
+                    warnings.extend(fallback_warnings)
+                    if fallback_results:
+                        fallback_block, fallback_block_warnings = self._block_from_results(
                             document_id,
                             page_input,
                             region,
+                            fallback_results,
                             render_artifact.uri,
-                            flags=(
+                            image_bytes=image_bytes,
+                            rendered_page=rendered_page,
+                            force_review=True,
+                            extra_flags=(
                                 ReviewFlag.MISSING_BACKEND,
                                 ReviewFlag.CAPABILITY_UNAVAILABLE,
+                                ReviewFlag.TABLE_STRUCTURE_UNCERTAIN,
                             ),
                         )
-                    )
+                        blocks.append(fallback_block)
+                        warnings.extend(fallback_block_warnings)
+                    else:
+                        blocks.append(
+                            self._empty_block(
+                                document_id,
+                                page_input,
+                                region,
+                                render_artifact.uri,
+                                flags=(
+                                    ReviewFlag.MISSING_BACKEND,
+                                    ReviewFlag.CAPABILITY_UNAVAILABLE,
+                                    ReviewFlag.TABLE_STRUCTURE_UNCERTAIN,
+                                ),
+                            )
+                        )
                     continue
                 block, block_warnings = self._block_from_table_result(
                     document_id,
@@ -805,6 +851,7 @@ class DocumentPipeline:
                     confidence_scale=getattr(
                         self.table_backend, "confidence_scale", "backend_specific"
                     ),
+                    backend_family=getattr(self.table_backend, "backend_family", "unknown"),
                     cells=tuple(raw_result),
                 )
             )
@@ -857,6 +904,7 @@ class DocumentPipeline:
                 if len(results) >= budget:
                     return results, warnings
                 try:
+                    profile_name = self._profile_for_variant(region, variant)
                     with trace_span("preprocessing", metrics=self.metrics):
                         prepared = prepare_image(
                             image_bytes,
@@ -866,6 +914,8 @@ class DocumentPipeline:
                             variant=variant,
                             max_crop_pixels=self.settings.max_crop_pixels,
                             max_region_scale=self.settings.max_region_scale,
+                            profile_name=profile_name,
+                            enabled_profiles=self.settings.preprocessing_profiles,
                         )
                     backend_region = replace(
                         region,
@@ -885,6 +935,11 @@ class DocumentPipeline:
                         dpi=float(rendered_page.dpi),
                         region_scale=float(prepared.scale),
                         preprocess_variant=variant,
+                        runtime_metadata=tuple(
+                            (*result.runtime_metadata,)
+                            if profile_name is None
+                            else (*result.runtime_metadata, ("preprocessing_profile", profile_name))
+                        ),
                     )
                     results.append(result)
                     warnings.extend(f"{result.backend}: {warning}" for warning in result.warnings)
@@ -909,6 +964,13 @@ class DocumentPipeline:
         else:
             retry_variants = ("grayscale", "contrast")
         return ("source-render",) + retry_variants[: self.settings.max_retries]
+
+    def _profile_for_variant(self, region: OcrRegion, variant: str) -> str | None:
+        if variant == "source-render":
+            return self.settings.default_preprocessing_profile
+        if region.tiny_text and variant.startswith("region-scale-"):
+            return "tiny_text"
+        return None
 
     def _map_result_to_page(self, result: OcrResult, prepared) -> OcrResult:
         mapped_lines = []
@@ -945,9 +1007,15 @@ class DocumentPipeline:
                     page_number=page_input.page_number,
                     dpi=dpi,
                 )
-        with trace_span("image_rendering", metrics=self.metrics):
-            return self.readers.image_reader.render(
+        with trace_span(
+            "image_rendering" if content_type.startswith("image/") else "office_rendering",
+            metrics=self.metrics,
+        ):
+            return self.readers.render_page(
                 source_path,
+                content_type=content_type,
+                page_number=page_input.page_number,
+                dpi=dpi,
                 source_uri=page_input.source_uri,
             )
 
@@ -961,6 +1029,7 @@ class DocumentPipeline:
             region_scale=result.region_scale,
             preprocess_variant=result.preprocess_variant,
             confidence_scale=result.confidence_scale,
+            backend_family=result.backend_family,
             configuration_hash=self.settings.configuration_hash,
             runtime_metadata=dict(result.runtime_metadata),
             warnings=list(result.warnings),

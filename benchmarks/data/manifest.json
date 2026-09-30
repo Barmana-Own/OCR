@@ -1,6 +1,7 @@
 {
   "schema_version": "1.0.0",
   "dataset_version": "synthetic-phase10-1.0.0",
+  "ground_truth_source": "synthetic",
   "ground_truth_uri": "ground_truth.json",
   "prediction_uris": {
     "current": "predictions/current.json"

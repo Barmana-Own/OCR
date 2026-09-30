@@ -25,3 +25,13 @@ class DocumentProcessor(Protocol):
 
 
 PipelineFactory = Callable[[ProcessingMode], DocumentProcessor]
+
+
+class JobQueue(Protocol):
+    """Durable queue boundary used when workers run in separate processes."""
+
+    def enqueue(self, job_id: str) -> None: ...
+
+    def dequeue(self, *, timeout_seconds: int = 5) -> str | None: ...
+
+    def ack(self, job_id: str) -> None: ...

@@ -197,18 +197,26 @@ class DatasetExporter:
                 if block.table_cells:
                     rows: dict[int, list[str]] = {}
                     for cell in sorted(block.table_cells, key=lambda item: (item.row, item.column)):
-                        if cls._eligible(cell.verification_status, policy):
+                        if cls._eligible(cell.verification_status, policy, cell.needs_review):
                             rows.setdefault(cell.row, []).append(
                                 cls._text_for_export(
-                                    cell.raw_text, cell.verification_status, policy
+                                    cell.raw_text,
+                                    cell.verification_status,
+                                    policy,
+                                    corrected_text=cell.corrected_text,
                                 )
                             )
                     entries.extend(" | ".join(rows[row]) for row in sorted(rows))
                     continue
                 for line in sorted(block.lines, key=lambda item: item.reading_order):
-                    if cls._eligible(line.verification_status, policy):
+                    if cls._eligible(line.verification_status, policy, line.needs_review):
                         entries.append(
-                            cls._text_for_export(line.raw_text, line.verification_status, policy)
+                            cls._text_for_export(
+                                line.raw_text,
+                                line.verification_status,
+                                policy,
+                                corrected_text=line.corrected_text,
+                            )
                         )
             page_text.append("\n".join(entries))
         path.write_text("\f\n".join(page_text) + "\n", encoding="utf-8")
@@ -232,8 +240,10 @@ class DatasetExporter:
                         ["| Row | Column | Text | Status |", "| ---: | ---: | --- | --- |"]
                     )
                     for cell in sorted(block.table_cells, key=lambda item: (item.row, item.column)):
-                        if cls._eligible(cell.verification_status, policy):
-                            text = cls._escape_markdown(cell.raw_text)
+                        if cls._eligible(cell.verification_status, policy, cell.needs_review):
+                            text = cls._escape_markdown(
+                                cell.corrected_text or cell.raw_text
+                            )
                             if policy is DatasetExportPolicy.ALL_WITH_STATUS:
                                 text = f"[{cell.verification_status.value}] {text}"
                             content.append(
@@ -243,8 +253,8 @@ class DatasetExporter:
                     content.append("")
                     continue
                 for line in sorted(block.lines, key=lambda item: item.reading_order):
-                    if cls._eligible(line.verification_status, policy):
-                        text = cls._escape_markdown(line.raw_text)
+                    if cls._eligible(line.verification_status, policy, line.needs_review):
+                        text = cls._escape_markdown(line.corrected_text or line.raw_text)
                         if policy is DatasetExportPolicy.ALL_WITH_STATUS:
                             text = f"[{line.verification_status.value}] {text}"
                         content.append(
@@ -263,13 +273,22 @@ class DatasetExporter:
         raw_text: str,
         status: VerificationStatus,
         policy: DatasetExportPolicy,
+        *,
+        corrected_text: str | None = None,
     ) -> str:
+        text = corrected_text or raw_text
         if policy is DatasetExportPolicy.ALL_WITH_STATUS:
-            return f"[{status.value}] {raw_text}"
-        return raw_text
+            return f"[{status.value}] {text}"
+        return text
 
     @staticmethod
-    def _eligible(status: VerificationStatus, policy: DatasetExportPolicy) -> bool:
+    def _eligible(
+        status: VerificationStatus,
+        policy: DatasetExportPolicy,
+        needs_review: bool = False,
+    ) -> bool:
+        if needs_review and policy is not DatasetExportPolicy.ALL_WITH_STATUS:
+            return False
         if policy is DatasetExportPolicy.STRICT_VERIFIED_ONLY:
             return status is VerificationStatus.VERIFIED
         if policy is DatasetExportPolicy.ACCEPTED_VERIFIED:
@@ -357,7 +376,7 @@ class DatasetExporter:
                 raise ArtifactStorageError("rendered page could not be decoded for crops") from exc
             for block in page.blocks:
                 for line in block.lines:
-                    if not self._eligible(line.verification_status, policy):
+                    if not self._eligible(line.verification_status, policy, line.needs_review):
                         continue
                     if line.source.coordinate_space != CoordinateSpace.RENDERED_PIXEL:
                         continue
@@ -428,6 +447,8 @@ class DatasetExporter:
             "line_id": line.id,
             "raw_text": line.raw_text,
             "normalized_text": line.normalized_text,
+            "corrected_text": line.corrected_text,
+            "effective_text": line.corrected_text or line.raw_text,
             "bbox": line.bbox.as_list(),
             "polygon": (
                 [point.model_dump(mode="json") for point in line.polygon]
@@ -452,6 +473,10 @@ class DatasetExporter:
             "candidates": [candidate.model_dump(mode="json") for candidate in line.candidates],
             "verification_history": [
                 attempt.model_dump(mode="json") for attempt in line.verification_history
+            ],
+            "correction_history": [
+                correction.model_dump(mode="json")
+                for correction in line.correction_history
             ],
             "crop": {
                 "page_bbox": line.bbox.as_list(),
@@ -525,8 +550,12 @@ class DatasetExporter:
         ]
         line_counts = Counter(line.verification_status.value for line in lines)
         cell_counts = Counter(cell.verification_status.value for cell in cells)
-        exported_lines = sum(cls._eligible(line.verification_status, policy) for line in lines)
-        exported_cells = sum(cls._eligible(cell.verification_status, policy) for cell in cells)
+        exported_lines = sum(
+            cls._eligible(line.verification_status, policy, line.needs_review) for line in lines
+        )
+        exported_cells = sum(
+            cls._eligible(cell.verification_status, policy, cell.needs_review) for cell in cells
+        )
         counts: dict[str, int] = {
             "pages": len(document.pages),
             "lines": len(lines),

@@ -5,34 +5,36 @@
 | Project | High-Accuracy Universal OCR & Document Dataset Pipeline |
 | Report type | Customer delivery report |
 | Language | English |
-| Jalali date | 1405-07-05 |
-| Gregorian date | 2026-09-27 |
-| Release | 0.1.0 |
-| Delivery status | Implementation baseline and Phase 13 integration audit delivered; external deployment not performed |
+| Jalali date | 1405-07-08 |
+| Gregorian date | 2026-09-30 |
+| Release | 0.1.0 incremental implementation program |
+| Delivery status | Program implementation integrated; external model and infrastructure validation remains pending |
 
 ## Executive summary
 
-Release 0.1.0 delivers an auditable OCR processing foundation that preserves source evidence, page structure, raw OCR text, normalized text, geometry, backend provenance, confidence, verification history, and review flags. The system is designed to fail visibly when OCR dependencies are unavailable rather than silently creating unverified text.
+The incremental implementation program extends the existing auditable OCR foundation without replacing its modular architecture. It preserves source evidence, page structure, raw OCR text, normalized text, geometry, backend provenance, confidence, verification history, and review flags. Optional capabilities fail visibly when their runtime or model is unavailable.
 
 ## Delivered capabilities
 
-- Native-text PDFs are extracted directly when the embedded text layer is reliable.
-- Scanned PDFs, raster images, and mixed native/image PDF pages have bounded rendering and OCR routing paths.
-- Persian, Arabic, English, and mixed-direction text retain raw text separately from configurable normalization.
-- Low-confidence OCR can retry with bounded preprocessing and tiny-region scaling; uncertainty and human-review status remain visible.
-- Canonical JSON, plain text, Markdown, page-image, line-crop, and label exports are deterministic and versioned.
-- Authenticated processing, upload limits, safe error responses, request IDs, immutable source artifacts, and structured logging are included.
-- Retention/deletion governance, authenticated document deletion, privacy-aware logs, capability-aware readiness, authenticated metrics, stage tracing hooks, persisted page checkpoints, and DPI/resource profiling are included.
-- Phase 13 verified 11/11 generated end-to-end scenarios across native/scanned/mixed PDFs, phone photos, tiny text, handwriting, forms, tables, multi-column pages, and low-quality scans. Page associations, line provenance, raw/normalized separation, review signaling, mixed routes, and deterministic exports passed.
+- Native-first PDF extraction remains in place, and validated native readers now cover DOCX, XLSX, optional legacy XLS, PPTX, UTF-8 TXT, CSV, JSON, and HTML.
+- Office container signatures and members are checked before native extraction; embedded visual regions retain an explicit OCR/rendering requirement.
+- PaddleOCR, PP-Structure, local-only Transformers HTR, PostgreSQL, S3-compatible storage, and Redis queue integrations are isolated behind optional adapters.
+- Table regions preserve printed OCR text when structure extraction is unavailable and emit explicit capability/review warnings.
+- Named preprocessing profiles are selected by the primary OCR path, with DPI, scale, and coordinate mapping retained for tiny-text variants.
+- Verification distinguishes independent backend families; same-engine preprocessing variants cannot create false independent consensus.
+- Strict and accepted+verified exports exclude records marked for review, while append-only human corrections preserve original raw text and audit history.
+- Schema-driven document intelligence exposes typed fields and evidence links to source spans or cells.
+- Benchmark execution can run real predictions against local external ground truth and rejects synthetic-only data when strict evaluation is requested.
+- Processing timeout enforcement, bounded resources, a distributed Compose profile, and a dedicated worker entrypoint are included.
 
 ## Quality and security status
 
-The automated suite passed 214 tests with 86% total coverage. Lint, compilation, dependency consistency, package build, Compose configuration, OpenAPI syntax, secret-pattern checks, and the 11/11 Phase 13 integration audit passed. No known Critical/High security issue remains in the implemented scope.
+The automated suite passed 235 tests with two dependency deprecation warnings. Ruff, compilation, dependency consistency, package build, local and distributed Compose configuration, and the repository OpenAPI checks passed. No model accuracy claim was made: real OCR/HTR/table quality still requires permitted ground truth and installed runtimes.
 
 ## Production status and limitations
 
-No external cloud deployment was made. Production still requires selected OCR/layout/handwriting model binaries and weights, licensing confirmation, secret-manager integration, gateway rate limiting, durable PostgreSQL/S3-compatible adapters where required, distributed queue restart recovery, and container smoke validation. The Docker daemon was unavailable during local validation, so the container build was recorded as `NOT_RUN`.
+No external deployment was made. Production validation still requires selected licensed OCR/layout/handwriting/table model binaries, permitted labeled ground truth, secret-manager and gateway configuration, live PostgreSQL/S3/Redis checks where selected, queue recovery validation, Docker runtime smoke tests, and external security/dependency scans. These checks are not represented as completed by this report.
 
 ## Handover
 
-The repository contains setup instructions, safe environment templates, API documentation, deployment configuration, operations guidance, tests, and stage evidence. Uncertain OCR remains explicitly flagged for verification; it is not presented as confirmed ground truth.
+The repository contains setup instructions, safe environment templates, API documentation, deployment configuration, operations guidance, tests, and the implementation program record in docs/phase13-program.md. Uncertain OCR remains explicitly flagged for verification and is not presented as confirmed ground truth.

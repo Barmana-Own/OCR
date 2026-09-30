@@ -79,7 +79,7 @@ def test_all_with_status_exports_review_crop_with_explicit_partition_and_mapping
     assert label["page_image_path"] == "pages/page_0001/image.png"
 
 
-def test_strict_verified_only_exports_verified_retry_result(tmp_path: Path) -> None:
+def test_strict_verified_only_excludes_same_backend_retry_result(tmp_path: Path) -> None:
     source_path = _source(tmp_path)
     backend = LowConfidenceRetryBackend()
     settings = Settings(environment="test", storage_root=tmp_path / "artifacts", max_retries=1)
@@ -96,10 +96,14 @@ def test_strict_verified_only_exports_verified_retry_result(tmp_path: Path) -> N
         policy=DatasetExportPolicy.STRICT_VERIFIED_ONLY,
     )
 
-    assert document.pages[0].blocks[0].lines[0].verification_status is VerificationStatus.VERIFIED
-    assert exported.manifest["counts"]["verified"] == 1
-    assert exported.manifest["counts"]["exported_lines"] == 1
-    assert list((exported.root / "pages" / "page_0001" / "lines" / "verified").glob("*.png"))
+    assert (
+        document.pages[0].blocks[0].lines[0].verification_status
+        is VerificationStatus.HUMAN_REVIEW_REQUIRED
+    )
+    assert document.pages[0].blocks[0].lines[0].needs_review is True
+    assert exported.manifest["counts"]["verified"] == 0
+    assert exported.manifest["counts"]["exported_lines"] == 0
+    assert not list((exported.root / "pages" / "page_0001" / "lines").rglob("*.png"))
 
 
 def test_manifest_contains_source_normalization_and_backend_provenance(tmp_path: Path) -> None:

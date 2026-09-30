@@ -147,6 +147,7 @@ class BenchmarkDocumentReference(BenchmarkBaseModel):
 class BenchmarkManifest(BenchmarkBaseModel):
     schema_version: str = Field(min_length=1, max_length=32)
     dataset_version: str = Field(min_length=1, max_length=64)
+    ground_truth_source: str = Field(default="stored", min_length=1, max_length=64)
     ground_truth_uri: str = Field(min_length=1, max_length=2048)
     prediction_uris: dict[str, str] = Field(min_length=1)
     documents: list[BenchmarkDocumentReference] = Field(min_length=1)

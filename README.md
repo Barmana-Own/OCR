@@ -22,8 +22,13 @@ Version 0.1.0 is an API-first modular monolith with synchronous compatibility pr
 - authenticated processing endpoint support with safe error envelopes and request IDs;
 - asynchronous document submission with fast/balanced/accurate processing modes, durable local job metadata, bounded worker execution, progress polling, idempotent resubmission, protected page images, manifests, and policy-aware exports.
 - authenticated metrics and capability-aware liveness/readiness endpoints, bounded model lifecycle/concurrency settings, stage tracing hooks, page-level failure recovery, and DPI/memory/artifact profiling.
+- native Office/text readers for DOCX, XLSX, PPTX, optional legacy XLS, TXT, CSV, JSON, and HTML; Office container detection is signature/member based;
+- optional Paddle printed OCR, PP-Structure table cells, local Transformers HTR, PostgreSQL/S3-compatible metadata/artifacts, and Redis worker dispatch adapters;
+- schema-driven semantic extraction with source evidence links and append-only human correction revisions;
+- real-pipeline benchmark execution mode that rejects synthetic-only ground truth when external evaluation is required;
+- enforced processing deadlines and an opt-in distributed worker Compose profile.
 
-Heavy OCR/layout/handwriting model packages are optional deployment dependencies. The default Tesseract adapter fails closed when its executable is unavailable; the pipeline never fabricates OCR text. NumPy/OpenCV remain optional; the required preprocessing path is bounded Pillow code.
+Heavy OCR/layout/handwriting model packages are optional deployment dependencies. The default Tesseract adapter fails closed when its executable is unavailable; the pipeline never fabricates OCR text. NumPy/OpenCV remain optional; the required preprocessing path is bounded Pillow code. See [docs/phase13-program.md](docs/phase13-program.md) for the added adapters and deployment boundary.
 
 ## Requirements
 
@@ -37,6 +42,10 @@ Heavy OCR/layout/handwriting model packages are optional deployment dependencies
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[test]"
+# Optional capabilities are installed explicitly when required:
+# python -m pip install -e ".[paddle,office]"
+# python -m pip install -e ".[htr]"
+# python -m pip install -e ".[distributed]"
 ```
 
 ## Validate
@@ -78,7 +87,7 @@ Use labeled benchmark data for accuracy claims; profiler output is operational e
 
 ## OCR benchmarks
 
-Phase 10 adds a versioned, synthetic-only benchmark fixture and a stored-candidate evaluation CLI. It reports CER/WER, exact lines, geometry/order, table cells, review routing, backend disagreement, and tiny-text stage improvement separately by document category.
+Phase 10/13 provide a versioned benchmark fixture and evaluation CLI. Stored synthetic predictions are suitable for contract regression; `--run-pipeline --require-external-ground-truth` executes the configured pipeline against real local sources and refuses synthetic-only evaluation. It reports CER/WER, exact lines, geometry/order, table cells, review routing, backend disagreement, and tiny-text stage improvement separately by document category.
 
 ```powershell
 python -m ocr_platform.benchmarks.run `
@@ -103,7 +112,7 @@ The source tree is organized around ingestion, imaging, layout/OCR/HTR/table por
 
 The canonical cross-cutting architecture is documented in [docs/architecture.md](docs/architecture.md), [docs/data-model.md](docs/data-model.md), and [docs/processing-flow.md](docs/processing-flow.md).
 
-Persistence is intentionally port-based in 0.1.0. The local artifact store is immutable, while atomic local JSON job/document repositories provide a single-node operational adapter. PostgreSQL, S3-compatible storage, Redis/RQ/Celery, distributed worker execution, and signed artifact URLs remain explicit extension points rather than hidden provider coupling.
+Persistence is intentionally port-based in 0.1.0. The local artifact store is immutable, while atomic local JSON job/document repositories provide a single-node operational adapter. PostgreSQL JSONB metadata, S3-compatible artifacts, and Redis queue dispatch are available as explicit opt-in adapters; configure them through `.env.example` and use the opt-in distributed Compose worker profile. Signed artifact URLs and deployment-specific access policies remain infrastructure responsibilities.
 
 ## Operational limitations
 
@@ -113,6 +122,6 @@ Persistence is intentionally port-based in 0.1.0. The local artifact store is im
 - The default worker executor is bounded and non-blocking for HTTP, but it is single-process; multi-instance deployments require a shared metadata database, object store, queue, worker recovery, and rate limiting.
 - The default layout detector is a conservative Pillow projection fallback: it can infer visual lines, columns, basic header/footer/page-number bands, and simple grid-like table regions, but it cannot reliably identify handwriting, formulas, form fields, or table cells without a deployed model adapter. Table/HTR execution is nevertheless routed through explicit ports and fails closed when unavailable.
 - A production deployment must install and license the selected OCR/layout/HTR models separately; optional PaddleOCR PP-Structure integration is explicit and fails closed when unavailable.
-- The default local worker is intentionally single-process. Use a shared durable queue, metadata database, object store, and restart-recovery worker adapter before multi-instance public deployment. The container configuration does not include model weights or external service credentials.
+- The default local worker is intentionally single-process. Use the shared Redis/PostgreSQL/S3 adapters and restart-recovery worker process before multi-instance public deployment. The container configuration does not include model weights or external service credentials.
 
 

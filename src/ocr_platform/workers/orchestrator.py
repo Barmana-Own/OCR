@@ -37,7 +37,7 @@ from ocr_platform.utils import stable_hash
 
 from .models import JobError, JobProgress, JobRecord, JobStatus, ProcessingMode
 from .policy import ProcessingModePolicy
-from .ports import DocumentProcessor, PipelineFactory
+from .ports import DocumentProcessor, JobQueue, PipelineFactory
 
 logger = get_logger(__name__)
 
@@ -63,6 +63,7 @@ class DocumentJobService:
         job_repository: JobRepository | None = None,
         document_repository: DocumentRepository | None = None,
         executor: Executor | None = None,
+        job_queue: JobQueue | None = None,
         metrics: MetricsRegistry | None = None,
     ) -> None:
         if pipeline is None and pipeline_factory is None:
@@ -84,11 +85,16 @@ class DocumentJobService:
             job_repository=self.job_repository,
             export_root=settings.storage_root / "exports",
         )
-        self._executor = executor or ThreadPoolExecutor(
-            max_workers=settings.worker_count,
-            thread_name_prefix="ocr-worker",
+        self._job_queue = job_queue
+        self._executor = executor or (
+            ThreadPoolExecutor(
+                max_workers=settings.worker_count,
+                thread_name_prefix="ocr-worker",
+            )
+            if job_queue is None
+            else None
         )
-        self._owns_executor = executor is None
+        self._owns_executor = executor is None and job_queue is None
         self._capacity = BoundedSemaphore(settings.worker_count + settings.max_queued_jobs)
         self._page_capacity = BoundedSemaphore(settings.max_pages_in_flight)
         self._submission_lock = RLock()
@@ -115,7 +121,10 @@ class DocumentJobService:
             or filename in {".", ".."}
         ):
             raise InvalidDocumentError("filename contains unsafe characters")
-        detected_content_type = detect_content_type_from_bytes(data)
+        detected_content_type = detect_content_type_from_bytes(
+            data,
+            declared_content_type=content_type,
+        )
         if (
             not content_type
             or content_type not in self.settings.allowed_content_types
@@ -147,8 +156,11 @@ class DocumentJobService:
             existing = self.job_repository.find_by_fingerprint(fingerprint)
             if existing is not None:
                 return JobSubmission(existing, idempotent_replay=True)
-            if not self._capacity.acquire(blocking=False):
-                raise QueueCapacityError()
+            capacity_acquired = False
+            if self._job_queue is None:
+                if not self._capacity.acquire(blocking=False):
+                    raise QueueCapacityError()
+                capacity_acquired = True
             job = JobRecord(
                 job_id=f"job-{fingerprint[:24]}",
                 document_id=f"doc-{source_checksum[:16]}",
@@ -166,9 +178,14 @@ class DocumentJobService:
                 self._store_upload(job, data)
                 self.job_repository.save(job)
                 self.metrics.increment("documents_submitted_total")
-                self._executor.submit(self._run_job, job.job_id)
+                if self._job_queue is not None:
+                    self._job_queue.enqueue(job.job_id)
+                else:
+                    assert self._executor is not None
+                    self._executor.submit(self._run_job, job.job_id)
             except Exception:
-                self._capacity.release()
+                if capacity_acquired:
+                    self._capacity.release()
                 raise
             return JobSubmission(job)
 
@@ -227,6 +244,16 @@ class DocumentJobService:
         if self._owns_executor and isinstance(self._executor, ThreadPoolExecutor):
             self._executor.shutdown(wait=wait, cancel_futures=False)
 
+    def run_job(self, job_id: str) -> None:
+        """Execute one queued job; intended for a dedicated worker process."""
+
+        if self._job_queue is None:
+            raise ConfigurationError("run_job requires a durable queue-backed service")
+        try:
+            self._run_job(job_id, release_capacity=False)
+        finally:
+            self._job_queue.ack(job_id)
+
     def _store_upload(self, job: JobRecord, data: bytes) -> None:
         artifact_name = self._upload_artifact_name(job.source_checksum)
         if self.artifact_store.exists(job.document_id, artifact_name):
@@ -256,8 +283,9 @@ class DocumentJobService:
         assert self._pipeline is not None
         return self._pipeline
 
-    def _run_job(self, job_id: str) -> None:
+    def _run_job(self, job_id: str, *, release_capacity: bool = True) -> None:
         started_performance = time.perf_counter()
+        deadline = started_performance + self.settings.processing_timeout_seconds
         try:
             with self._submission_lock:
                 job = self.get_job(job_id)
@@ -271,6 +299,7 @@ class DocumentJobService:
                 )
                 self._save_job(job)
             self.settings.temporary_workspace.mkdir(parents=True, exist_ok=True)
+            self._raise_if_deadline_exceeded(deadline)
             source_bytes = self.artifact_store.read_bytes(
                 job.document_id, self._upload_artifact_name(job.source_checksum)
             )
@@ -285,9 +314,15 @@ class DocumentJobService:
             try:
                 processor = self._processor_for(job.mode)
                 with trace_span("document_processing", metrics=self.metrics):
-                    document = self._process_with_progress(processor, temporary_path, job)
+                    document = self._process_with_progress(
+                        processor,
+                        temporary_path,
+                        job,
+                        deadline=deadline,
+                    )
             finally:
                 temporary_path.unlink(missing_ok=True)
+            self._raise_if_deadline_exceeded(deadline)
             status = (
                 JobStatus.COMPLETED_WITH_WARNINGS
                 if document.processing_status is ProcessingStatus.COMPLETED_WITH_WARNINGS
@@ -348,12 +383,20 @@ class DocumentJobService:
             logger.exception("unhandled document job failure", extra={"job_id": job_id})
             self._fail_job(job_id, "processing_error", "document processing failed", True)
         finally:
-            self._capacity.release()
+            if release_capacity:
+                self._capacity.release()
 
     def _process_with_progress(
-        self, processor: DocumentProcessor, path: Path, job: JobRecord
+        self,
+        processor: DocumentProcessor,
+        path: Path,
+        job: JobRecord,
+        *,
+        deadline: float | None = None,
     ) -> Document:
         def progress(current_page: int, total_pages: int, stage: str) -> None:
+            if deadline is not None:
+                self._raise_if_deadline_exceeded(deadline)
             denominator = max(total_pages, 1)
             percent = min(99.0, max(1.0, 5.0 + (current_page / denominator) * 90.0))
             with self._submission_lock:
@@ -384,7 +427,19 @@ class DocumentJobService:
         if "progress_callback" in inspect.signature(processor.process_path).parameters:
             kwargs["progress_callback"] = progress
         with self._page_capacity:
-            return processor.process_path(path, **kwargs)
+            if deadline is not None:
+                self._raise_if_deadline_exceeded(deadline)
+            result = processor.process_path(path, **kwargs)
+            if deadline is not None:
+                self._raise_if_deadline_exceeded(deadline)
+            return result
+
+    @staticmethod
+    def _raise_if_deadline_exceeded(deadline: float) -> None:
+        from ocr_platform.errors import ProcessingTimeoutError
+
+        if time.perf_counter() > deadline:
+            raise ProcessingTimeoutError()
 
     def _save_job(self, job: JobRecord) -> None:
         self.job_repository.save(job)

@@ -50,6 +50,8 @@ DEFAULT_VERIFICATION_MAX_CANDIDATES = 6
 DEFAULT_VERIFICATION_MIN_CONSENSUS_CANDIDATES = 2
 DEFAULT_VERIFICATION_REQUIRE_CONSENSUS = True
 DEFAULT_VERIFICATION_ALLOW_CONSENSUS_OVERRIDE = True
+DEFAULT_VERIFICATION_REQUIRE_INDEPENDENT_CONSENSUS = True
+DEFAULT_VERIFICATION_MIN_INDEPENDENT_BACKEND_FAMILIES = 2
 DEFAULT_VERIFICATION_MIN_TEXT_LENGTH = 1
 DEFAULT_VERIFICATION_MAX_SUSPICIOUS_CHAR_RATE = 0.10
 DEFAULT_VERIFICATION_MIN_IMAGE_QUALITY = 0.20
@@ -62,6 +64,12 @@ DEFAULT_MODE_HIGH_QUALITY_RETRY = (
 DEFAULT_BACKEND_CONFIDENCE_THRESHOLDS: tuple[tuple[str, float], ...] = ()
 DEFAULT_PROCESSING_TIMEOUT_SECONDS = 300
 DEFAULT_ARTIFACT_BUCKET = "ocr-artifacts"
+DEFAULT_ARTIFACT_STORE_BACKEND = "local"
+DEFAULT_METADATA_BACKEND = "file"
+DEFAULT_QUEUE_BACKEND = "local"
+DEFAULT_S3_PREFIX = "ocr"
+DEFAULT_POSTGRES_SCHEMA = "public"
+DEFAULT_REDIS_QUEUE_NAME = "ocr:jobs"
 DEFAULT_OCR_BACKENDS = ("tesseract",)
 DEFAULT_OCR_LANGUAGES = ("fas", "eng")
 DEFAULT_OCR_BACKEND_TIMEOUT_SECONDS = 120
@@ -70,7 +78,14 @@ DEFAULT_LAYOUT_MAX_PIXELS = 4_000_000
 DEFAULT_LAYOUT_MAX_REGIONS = 512
 DEFAULT_LAYOUT_MIN_CONFIDENCE = 0.35
 DEFAULT_HANDWRITING_BACKEND = "unavailable"
+DEFAULT_HANDWRITING_MODEL_PATH = Path("var/models/htr")
 DEFAULT_TABLE_BACKEND = "unavailable"
+DEFAULT_TEXT_CONTENT_TYPES = (
+    "text/plain",
+    "text/csv",
+    "application/json",
+    "text/html",
+)
 DEFAULT_NATIVE_TEXT_MIN_CHARACTERS = 5
 DEFAULT_NATIVE_TEXT_MIN_COVERAGE = 0.00001
 DEFAULT_NATIVE_TEXT_MAX_SUSPICIOUS_RATIO = 0.20
@@ -292,6 +307,15 @@ class Settings:
     model_path: Path = Path("var/models")
     cache_path: Path = Path("var/cache")
     artifact_bucket: str = DEFAULT_ARTIFACT_BUCKET
+    artifact_store_backend: str = DEFAULT_ARTIFACT_STORE_BACKEND
+    s3_endpoint_url: str | None = None
+    s3_prefix: str = DEFAULT_S3_PREFIX
+    metadata_backend: str = DEFAULT_METADATA_BACKEND
+    postgres_dsn: str | None = None
+    postgres_schema: str = DEFAULT_POSTGRES_SCHEMA
+    queue_backend: str = DEFAULT_QUEUE_BACKEND
+    redis_url: str | None = None
+    redis_queue_name: str = DEFAULT_REDIS_QUEUE_NAME
     max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES
     max_pages: int = DEFAULT_MAX_PAGES
     max_render_pixels: int = DEFAULT_MAX_RENDER_PIXELS
@@ -324,6 +348,12 @@ class Settings:
     verification_allow_consensus_override_low_confidence: bool = (
         DEFAULT_VERIFICATION_ALLOW_CONSENSUS_OVERRIDE
     )
+    verification_require_independent_backend_consensus: bool = (
+        DEFAULT_VERIFICATION_REQUIRE_INDEPENDENT_CONSENSUS
+    )
+    verification_min_independent_backend_families: int = (
+        DEFAULT_VERIFICATION_MIN_INDEPENDENT_BACKEND_FAMILIES
+    )
     verification_min_text_length: int = DEFAULT_VERIFICATION_MIN_TEXT_LENGTH
     verification_max_suspicious_char_rate: float = DEFAULT_VERIFICATION_MAX_SUSPICIOUS_CHAR_RATE
     verification_min_image_quality: float = DEFAULT_VERIFICATION_MIN_IMAGE_QUALITY
@@ -351,6 +381,7 @@ class Settings:
     layout_max_regions: int = DEFAULT_LAYOUT_MAX_REGIONS
     layout_min_confidence: float = DEFAULT_LAYOUT_MIN_CONFIDENCE
     handwriting_backend: str = DEFAULT_HANDWRITING_BACKEND
+    handwriting_model_path: Path = DEFAULT_HANDWRITING_MODEL_PATH
     table_backend: str = DEFAULT_TABLE_BACKEND
     require_auth: bool = False
     allow_sensitive_debug_logging: bool = False
@@ -361,6 +392,11 @@ class Settings:
         "image/png",
         "image/tiff",
         "image/webp",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.ms-excel",
+        *DEFAULT_TEXT_CONTENT_TYPES,
     )
 
     def __post_init__(self) -> None:
@@ -442,6 +478,10 @@ class Settings:
             raise ConfigurationError(
                 "consensus candidates cannot exceed maximum verification candidates"
             )
+        if self.verification_min_independent_backend_families <= 0:
+            raise ConfigurationError(
+                "minimum independent backend families must be positive"
+            )
         if self.verification_min_text_length <= 0:
             raise ConfigurationError("minimum verification text length must be positive")
         if not 0 <= self.verification_max_suspicious_char_rate <= 1:
@@ -498,6 +538,25 @@ class Settings:
             )
         if not self.artifact_bucket or re.search(r"[\\/\x00-\x1f]", self.artifact_bucket):
             raise ConfigurationError("artifact bucket must be a safe non-empty name")
+        if self.artifact_store_backend not in {"local", "s3"}:
+            raise ConfigurationError("artifact store backend must be local or s3")
+        if self.metadata_backend not in {"file", "postgres"}:
+            raise ConfigurationError("metadata backend must be file or postgres")
+        if self.queue_backend not in {"local", "redis"}:
+            raise ConfigurationError("queue backend must be local or redis")
+        if self.metadata_backend == "postgres" and not (self.postgres_dsn or "").strip():
+            raise ConfigurationError("PostgreSQL metadata backend requires OCR_POSTGRES_DSN")
+        if self.queue_backend == "redis" and not (self.redis_url or "").strip():
+            raise ConfigurationError("Redis queue backend requires OCR_REDIS_URL")
+        if not self.s3_prefix or any(
+            not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", part)
+            for part in self.s3_prefix.replace("\\", "/").split("/")
+        ):
+            raise ConfigurationError("S3 prefix must contain safe path components")
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.postgres_schema):
+            raise ConfigurationError("PostgreSQL schema name is unsafe")
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", self.redis_queue_name):
+            raise ConfigurationError("Redis queue name is unsafe")
         backend_values = (
             *self.enabled_ocr_backends,
             self.layout_backend,
@@ -527,6 +586,13 @@ class Settings:
             "environment": self.environment,
             "pipeline_version": self.pipeline_version,
             "schema_version": self.schema_version,
+            "artifact_store_backend": self.artifact_store_backend,
+            "artifact_bucket": self.artifact_bucket,
+            "s3_prefix": self.s3_prefix,
+            "metadata_backend": self.metadata_backend,
+            "postgres_schema": self.postgres_schema,
+            "queue_backend": self.queue_backend,
+            "redis_queue_name": self.redis_queue_name,
             "max_upload_bytes": self.max_upload_bytes,
             "max_pages": self.max_pages,
             "max_render_pixels": self.max_render_pixels,
@@ -555,6 +621,12 @@ class Settings:
             "verification_allow_consensus_override_low_confidence": (
                 self.verification_allow_consensus_override_low_confidence
             ),
+            "verification_require_independent_backend_consensus": (
+                self.verification_require_independent_backend_consensus
+            ),
+            "verification_min_independent_backend_families": (
+                self.verification_min_independent_backend_families
+            ),
             "verification_min_text_length": self.verification_min_text_length,
             "verification_max_suspicious_char_rate": self.verification_max_suspicious_char_rate,
             "verification_min_image_quality": self.verification_min_image_quality,
@@ -580,6 +652,7 @@ class Settings:
             "layout_max_regions": self.layout_max_regions,
             "layout_min_confidence": self.layout_min_confidence,
             "handwriting_backend": self.handwriting_backend,
+            "handwriting_model_path": str(self.handwriting_model_path),
             "table_backend": self.table_backend,
             "require_auth": self.require_auth,
             "allow_sensitive_debug_logging": self.allow_sensitive_debug_logging,
@@ -609,6 +682,21 @@ class Settings:
             model_path=Path(os.getenv("OCR_MODEL_PATH", "var/models")),
             cache_path=Path(os.getenv("OCR_CACHE_PATH", "var/cache")),
             artifact_bucket=os.getenv("OCR_ARTIFACT_BUCKET", DEFAULT_ARTIFACT_BUCKET).strip(),
+            artifact_store_backend=os.getenv(
+                "OCR_ARTIFACT_STORE_BACKEND", DEFAULT_ARTIFACT_STORE_BACKEND
+            ).strip().lower(),
+            s3_endpoint_url=(os.getenv("OCR_S3_ENDPOINT_URL", "").strip() or None),
+            s3_prefix=os.getenv("OCR_S3_PREFIX", DEFAULT_S3_PREFIX).strip(),
+            metadata_backend=os.getenv(
+                "OCR_METADATA_BACKEND", DEFAULT_METADATA_BACKEND
+            ).strip().lower(),
+            postgres_dsn=(os.getenv("OCR_POSTGRES_DSN", "").strip() or None),
+            postgres_schema=os.getenv("OCR_POSTGRES_SCHEMA", DEFAULT_POSTGRES_SCHEMA).strip(),
+            queue_backend=os.getenv("OCR_QUEUE_BACKEND", DEFAULT_QUEUE_BACKEND).strip().lower(),
+            redis_url=(os.getenv("OCR_REDIS_URL", "").strip() or None),
+            redis_queue_name=os.getenv(
+                "OCR_REDIS_QUEUE_NAME", DEFAULT_REDIS_QUEUE_NAME
+            ).strip(),
             max_upload_bytes=_env_int("OCR_MAX_UPLOAD_BYTES", DEFAULT_MAX_UPLOAD_BYTES),
             max_pages=_env_int("OCR_MAX_PAGES", DEFAULT_MAX_PAGES),
             max_render_pixels=_env_int("OCR_MAX_RENDER_PIXELS", DEFAULT_MAX_RENDER_PIXELS),
@@ -660,6 +748,14 @@ class Settings:
             verification_allow_consensus_override_low_confidence=_env_bool(
                 "OCR_VERIFICATION_ALLOW_CONSENSUS_OVERRIDE",
                 DEFAULT_VERIFICATION_ALLOW_CONSENSUS_OVERRIDE,
+            ),
+            verification_require_independent_backend_consensus=_env_bool(
+                "OCR_VERIFICATION_REQUIRE_INDEPENDENT_CONSENSUS",
+                DEFAULT_VERIFICATION_REQUIRE_INDEPENDENT_CONSENSUS,
+            ),
+            verification_min_independent_backend_families=_env_int(
+                "OCR_VERIFICATION_MIN_INDEPENDENT_BACKEND_FAMILIES",
+                DEFAULT_VERIFICATION_MIN_INDEPENDENT_BACKEND_FAMILIES,
             ),
             verification_min_text_length=_env_int(
                 "OCR_VERIFICATION_MIN_TEXT_LENGTH", DEFAULT_VERIFICATION_MIN_TEXT_LENGTH
@@ -724,6 +820,9 @@ class Settings:
             handwriting_backend=os.getenv(
                 "OCR_HANDWRITING_BACKEND", DEFAULT_HANDWRITING_BACKEND
             ).strip(),
+            handwriting_model_path=Path(
+                os.getenv("OCR_HANDWRITING_MODEL_PATH", str(DEFAULT_HANDWRITING_MODEL_PATH))
+            ),
             table_backend=os.getenv("OCR_TABLE_BACKEND", DEFAULT_TABLE_BACKEND).strip(),
             require_auth=_env_bool("OCR_REQUIRE_AUTH", require_auth_default),
             allow_sensitive_debug_logging=_env_bool(
@@ -738,6 +837,11 @@ class Settings:
                     "image/png",
                     "image/tiff",
                     "image/webp",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    "application/vnd.ms-excel",
+                    *DEFAULT_TEXT_CONTENT_TYPES,
                 ),
             ),
         )

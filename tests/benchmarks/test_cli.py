@@ -71,3 +71,21 @@ def test_benchmark_cli_can_fail_non_destructively_on_gate_or_compare_failure(
     payload = json.loads(current.read_text(encoding="utf-8"))
     assert payload["quality_gates"]["passed"] is False
     assert payload["comparison"]["has_regressions"] is False
+
+
+def test_real_benchmark_mode_rejects_synthetic_ground_truth(tmp_path: Path) -> None:
+    output = tmp_path / "real.json"
+    assert (
+        main(
+            [
+                "--dataset",
+                "benchmarks/data",
+                "--output",
+                str(output),
+                "--run-pipeline",
+                "--require-external-ground-truth",
+            ]
+        )
+        == 2
+    )
+    assert not output.exists()

@@ -13,8 +13,16 @@ from ocr_platform.storage import ArtifactLayout, ArtifactStore, LocalArtifactSto
 
 from .image_reader import ImageReader
 from .models import ArtifactReference, IngestionResult, PageInput, RenderedPage
+from .office_reader import (
+    DOCX_CONTENT_TYPE,
+    PPTX_CONTENT_TYPE,
+    XLS_CONTENT_TYPE,
+    XLSX_CONTENT_TYPE,
+    OfficeReader,
+)
 from .pdf_reader import PdfReader
 from .source import build_document_source, detect_content_type
+from .text_reader import TEXT_CONTENT_TYPES, TextReader
 
 
 class DocumentReaderService:
@@ -22,6 +30,8 @@ class DocumentReaderService:
         self.settings = settings
         self.pdf_reader = PdfReader(settings)
         self.image_reader = ImageReader(settings)
+        self.office_reader = OfficeReader(settings)
+        self.text_reader = TextReader(max_page_height=settings.max_page_height)
 
     def read(
         self, path: Path, *, document_id: str, content_type: str, source_uri: str
@@ -31,6 +41,24 @@ class DocumentReaderService:
         if content_type.startswith("image/"):
             return self.image_reader.read(
                 path,
+                source_uri=source_uri,
+                document_id=document_id,
+            )
+        if content_type in {
+            DOCX_CONTENT_TYPE,
+            XLSX_CONTENT_TYPE,
+            PPTX_CONTENT_TYPE,
+            XLS_CONTENT_TYPE,
+        }:
+            return self.office_reader.extract(
+                path,
+                content_type=content_type,
+                source_uri=source_uri,
+            )
+        if content_type in TEXT_CONTENT_TYPES:
+            return self.text_reader.read(
+                path,
+                content_type=content_type,
                 source_uri=source_uri,
                 document_id=document_id,
             )
@@ -51,6 +79,23 @@ class DocumentReaderService:
             if page_number != 1:
                 raise InvalidDocumentError("standalone image inputs contain one page")
             return self.image_reader.render(path, source_uri=source_uri)
+        if content_type in {
+            DOCX_CONTENT_TYPE,
+            XLSX_CONTENT_TYPE,
+            PPTX_CONTENT_TYPE,
+            XLS_CONTENT_TYPE,
+        }:
+            return self.office_reader.render_page(
+                path,
+                content_type=content_type,
+                page_number=page_number,
+                dpi=dpi,
+                source_uri=source_uri,
+            )
+        if content_type in TEXT_CONTENT_TYPES:
+            raise UnsupportedDocumentError(
+                "logical text formats do not have a visual page renderer"
+            )
         raise UnsupportedDocumentError("no renderer is registered for this content type")
 
 

@@ -148,8 +148,13 @@ def parse_artifact_uri(uri: str) -> tuple[str, str]:
 
 
 def read_artifact_uri(store: ArtifactStore, uri: str) -> bytes:
-    document_id, artifact_name = parse_artifact_uri(uri)
-    return store.read_bytes(document_id, artifact_name)
+    if uri.startswith("artifact://"):
+        document_id, artifact_name = parse_artifact_uri(uri)
+        return store.read_bytes(document_id, artifact_name)
+    reader = getattr(store, "read_uri", None)
+    if uri.startswith("s3://") and callable(reader):
+        return reader(uri)
+    raise ArtifactStorageError("unsupported artifact URI")
 
 
 class LocalArtifactStore:
