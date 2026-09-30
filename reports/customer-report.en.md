@@ -19,7 +19,7 @@ The incremental implementation program extends the existing auditable OCR founda
 - Native-first PDF extraction remains in place, and validated native readers now cover DOCX, XLSX, optional legacy XLS, PPTX, UTF-8 TXT, CSV, JSON, and HTML.
 - Office container signatures and members are checked before native extraction; embedded visual regions retain an explicit OCR/rendering requirement.
 - PaddleOCR, PP-Structure, local-only Transformers HTR, PostgreSQL, S3-compatible storage, and Redis queue integrations are isolated behind optional adapters.
-- Table regions preserve printed OCR text when structure extraction is unavailable and emit explicit capability/review warnings.
+- Table regions preserve printed OCR text when structure extraction is unavailable and emit explicit capability/review warnings; optional PP-Structure cells are validated, mapped from scaled crops, and exported with row/column and provenance metadata.
 - Named preprocessing profiles are selected by the primary OCR path, with DPI, scale, and coordinate mapping retained for tiny-text variants.
 - Verification distinguishes backend family/name, model, and model version evidence identities; same-engine preprocessing variants are recorded as stability only and cannot create false independent consensus.
 - Strict and accepted+verified exports exclude records marked for review, while append-only human corrections preserve original raw text and audit history.
@@ -29,7 +29,7 @@ The incremental implementation program extends the existing auditable OCR founda
 
 ## Quality and security status
 
-The automated suite passed 242 tests with two dependency deprecation warnings. Ruff, compilation, dependency consistency, package build, local and distributed Compose configuration, and the repository OpenAPI checks passed. No model accuracy claim was made: real OCR/HTR/table quality still requires permitted ground truth and installed runtimes.
+The automated suite passed 254 tests; one optional model smoke test was skipped by configuration, with two dependency deprecation warnings. Ruff, compilation, dependency consistency, package build, Compose configuration, base-import, and the repository OpenAPI checks passed. No model accuracy claim was made: real OCR/HTR/table quality still requires permitted ground truth and installed runtimes.
 
 ## Production status and limitations
 

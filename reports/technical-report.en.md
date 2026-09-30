@@ -9,8 +9,8 @@
 | Gregorian date | 2026-09-30 |
 | Release | 0.1.0 incremental implementation program |
 | Repository | `E:\OCR` |
-| Repository revision | `6e78341` |
-| Delivery status | Incremental implementation integrated; Task 01 verification/export safety hardening pushed; external model and infrastructure validation remains pending |
+| Repository revision | `86267f9` (Task 02 implementation checkpoint) |
+| Delivery status | Incremental implementation integrated; Task 01 verification/export safety and Task 02 table extraction/fallback are implemented; external model and infrastructure validation remains pending |
 
 ## Scope and architecture
 
@@ -29,6 +29,9 @@ The canonical hierarchy is `Document -> Page -> Block -> Line -> Word`. Raw and 
 - Line, table-cell, block, page, and document validators prevent `needs_review=true` from remaining `accepted` or `verified`; parent certainty is propagated from child evidence.
 - Persian normalization is configurable and never overwrites raw text.
 - Dataset export produces canonical JSON, plain text, Markdown, page images, line crops, labels, and deterministic manifests.
+- Table extraction now has a real optional lazy PP-Structure adapter with `paddle`, `paddle-table`, and `ppstructure` aliases. Provider cells are validated in local crop coordinates, retain row/column/raw/normalized/provenance data, and map safely through non-origin and tiny-text scaled crops.
+- Table backend absence, failure, timeout, empty output, or unusable structure triggers printed OCR fallback with explicit table-structure review flags; fallback text is never presented as structured cells.
+- Markdown table export retains raw and normalized text, row/column, review state, bounding box, and backend/model/version; plain text is deterministic row-then-column order.
 - Quality hooks cover CER, WER, confidence, disagreement, IoU line detection precision/recall, reading order, exact-match field/cell text, review rate, and tiny-text recovery.
 - API boundaries provide request correlation, streaming upload limits, typed auth errors, safe error envelopes, health/readiness, and production/staging auth fail-closed configuration.
 - Security hardening covers path traversal, source immutability, bounded resources, subprocess argument safety, redaction, secret-pattern review, and regression tests.
@@ -109,7 +112,20 @@ The following workstreams are implemented in the existing modular monolith. Adap
 | Default and `all_with_status` exports are policy-safe | PASS — line/table text, Markdown, structured page manifest, crop label, and canonical-evidence tests |
 | Candidate ordering, provenance, history, and reason-code retention | PASS — existing and new verification/export regression suite |
 
-The change was committed and pushed to `origin/main` at `6e78341`.
+The Task 01 change was committed and pushed to `origin/main` at `6e78341`.
+
+## Task 02 real table extraction and safe text fallback evidence
+
+| Requirement | Result |
+|---|---|
+| Optional concrete table backend and aliases | PASS — `PaddleStructureTableBackend`/`PaddleTableBackend` with lazy PP-Structure loading and fail-closed unavailable behavior |
+| Six-cell 2x3 structure and Persian/English preservation | PASS — deterministic adapter tests with zero-based row/column addresses and untouched raw text |
+| Geometry validation and page mapping | PASS — invalid/out-of-region/duplicate/overlapping cells are rejected or flagged; non-origin and `region-scale-2` mappings are tested |
+| Missing, failed, empty, and unusable table fallback | PASS — printed OCR text remains in the canonical block with explicit warnings and review flags |
+| Table-aware exports | PASS — JSON/Markdown preserve structure/provenance; text export is row-then-column deterministic; review-required cells remain excluded by default |
+| Base installation safety | PASS — importing `ocr_platform` and `ocr_platform.tables` does not require PaddleOCR; model smoke is isolated behind `model` and explicit local-runtime settings |
+
+Task 02 was committed at `86267f9`. The optional PaddleOCR runtime/model was not installed in the validation environment; no real model accuracy claim is made.
 
 ## Prior twelve-stage baseline status
 
