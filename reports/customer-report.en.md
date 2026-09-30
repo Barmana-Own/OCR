@@ -8,7 +8,7 @@
 | Jalali date | 1405-07-08 |
 | Gregorian date | 2026-09-30 |
 | Release | 0.1.0 incremental implementation program |
-| Delivery status | Program implementation integrated; external model and infrastructure validation remains pending |
+| Delivery status | Program implementation integrated; verification/export safety hardening pushed; external model and infrastructure validation remains pending |
 
 ## Executive summary
 
@@ -21,7 +21,7 @@ The incremental implementation program extends the existing auditable OCR founda
 - PaddleOCR, PP-Structure, local-only Transformers HTR, PostgreSQL, S3-compatible storage, and Redis queue integrations are isolated behind optional adapters.
 - Table regions preserve printed OCR text when structure extraction is unavailable and emit explicit capability/review warnings.
 - Named preprocessing profiles are selected by the primary OCR path, with DPI, scale, and coordinate mapping retained for tiny-text variants.
-- Verification distinguishes independent backend families; same-engine preprocessing variants cannot create false independent consensus.
+- Verification distinguishes backend family/name, model, and model version evidence identities; same-engine preprocessing variants are recorded as stability only and cannot create false independent consensus.
 - Strict and accepted+verified exports exclude records marked for review, while append-only human corrections preserve original raw text and audit history.
 - Schema-driven document intelligence exposes typed fields and evidence links to source spans or cells.
 - Benchmark execution can run real predictions against local external ground truth and rejects synthetic-only data when strict evaluation is requested.
@@ -29,7 +29,7 @@ The incremental implementation program extends the existing auditable OCR founda
 
 ## Quality and security status
 
-The automated suite passed 235 tests with two dependency deprecation warnings. Ruff, compilation, dependency consistency, package build, local and distributed Compose configuration, and the repository OpenAPI checks passed. No model accuracy claim was made: real OCR/HTR/table quality still requires permitted ground truth and installed runtimes.
+The automated suite passed 242 tests with two dependency deprecation warnings. Ruff, compilation, dependency consistency, package build, local and distributed Compose configuration, and the repository OpenAPI checks passed. No model accuracy claim was made: real OCR/HTR/table quality still requires permitted ground truth and installed runtimes.
 
 ## Production status and limitations
 

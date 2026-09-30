@@ -9,8 +9,8 @@
 | Gregorian date | 2026-09-30 |
 | Release | 0.1.0 incremental implementation program |
 | Repository | `E:\OCR` |
-| Repository revision | `12e0a5a` |
-| Delivery status | Incremental implementation integrated; external model and infrastructure validation remains pending |
+| Repository revision | `6e78341` |
+| Delivery status | Incremental implementation integrated; Task 01 verification/export safety hardening pushed; external model and infrastructure validation remains pending |
 
 ## Scope and architecture
 
@@ -25,6 +25,8 @@ The canonical hierarchy is `Document -> Page -> Block -> Line -> Word`. Raw and 
 - Mixed PDFs preserve native text blocks and route embedded image regions to OCR.
 - OCR-required regions support bounded crop/preprocessing variants, tiny-text scale retries, backend adapters, and reversible geometry mapping.
 - Verification preserves all attempts, flags disagreement/low confidence/tiny text/mismatched confidence scales, and fails closed on unavailable backends.
+- Verification now exposes an evidence key of `(backend_family, backend, model, model_version)`, separates same-key stability from independent consensus, and records deterministic evidence counts/reason codes without treating preprocessing variants as independent engines.
+- Line, table-cell, block, page, and document validators prevent `needs_review=true` from remaining `accepted` or `verified`; parent certainty is propagated from child evidence.
 - Persian normalization is configurable and never overwrites raw text.
 - Dataset export produces canonical JSON, plain text, Markdown, page images, line crops, labels, and deterministic manifests.
 - Quality hooks cover CER, WER, confidence, disagreement, IoU line detection precision/recall, reading order, exact-match field/cell text, review rate, and tiny-text recovery.
@@ -72,7 +74,7 @@ The following workstreams are implemented in the existing modular monolith. Adap
 - The base installation remains usable without heavyweight model packages or downloads.
 - Provider-specific OCR, HTR, table, metadata, artifact, and queue integrations remain behind typed ports and lazy adapters.
 - Native text and Office structure are extracted before raster OCR; embedded visual regions retain an explicit later OCR requirement.
-- Review and export policy is status-driven and also checks the review flag, preventing uncertain records from entering verified-only datasets.
+- Review and export policy is object-aware: default text/Markdown/page-structured/crop exports exclude review-required or blocking-evidence lines/cells, while `all_with_status` retains explicit status/review metadata and the canonical JSON remains complete.
 - Configuration hashes omit secrets, and source/artifact identifiers are bounded and deterministic.
 - Queue, metadata, and object-store selection is explicit through environment settings; the default remains a local modular monolith.
 
@@ -80,7 +82,7 @@ The following workstreams are implemented in the existing modular monolith. Adap
 
 | Check | Result |
 |---|---|
-| PYTHONPATH=src pytest -q | PASS — 235 passed; two dependency deprecation warnings |
+| PYTHONPATH=src pytest -q | PASS — 242 passed; two dependency deprecation warnings |
 | python -m compileall -q src tests | PASS |
 | ruff check src tests scripts | PASS |
 | python -m pip check | PASS |
@@ -95,6 +97,19 @@ The following workstreams are implemented in the existing modular monolith. Adap
 | Static type checker | NOT_RUN — no configured checker was available |
 | Docker build and runtime smoke | NOT_RUN — Docker daemon unavailable |
 | External deployment | NOT_PERFORMED — no target or credentials authorized |
+
+## Task 01 verification and export safety evidence
+
+| Requirement | Result |
+|---|---|
+| Same Tesseract identity across three preprocessing variants cannot independently verify low-confidence text | PASS — deterministic regression test; independent count remains 1 and status is human review required |
+| Independent backend families can satisfy configured consensus | PASS — backend-family regression test |
+| Model version participates in the documented evidence identity | PASS — versioned identity regression test |
+| Review state cannot coexist with accepted/verified line or table-cell status | PASS — leaf and parent aggregation model tests |
+| Default and `all_with_status` exports are policy-safe | PASS — line/table text, Markdown, structured page manifest, crop label, and canonical-evidence tests |
+| Candidate ordering, provenance, history, and reason-code retention | PASS — existing and new verification/export regression suite |
+
+The change was committed and pushed to `origin/main` at `6e78341`.
 
 ## Prior twelve-stage baseline status
 

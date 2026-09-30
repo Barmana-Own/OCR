@@ -827,7 +827,7 @@
       "pip_audit_and_static_type_check"
     ],
     "validation": {
-      "tests": "PASS: 235 passed; 2 dependency deprecation warnings",
+      "tests": "PASS: 242 passed; 2 dependency deprecation warnings",
       "compileall": "PASS: python -m compileall -q src tests",
       "ruff": "PASS: ruff check src tests scripts",
       "pip_check": "PASS: python -m pip check",
@@ -840,5 +840,24 @@
     },
     "truthfulness_note": "No OCR accuracy or handwriting-quality claim is made without permitted ground truth and installed model runtimes."
   },
-  "next_incremental_phase": "Install permitted model/runtime dependencies and run external-ground-truth benchmark validation"
+  "next_incremental_phase": "Install permitted model/runtime dependencies and run external-ground-truth benchmark validation",
+  "task01_verification_export_safety": {
+    "status": "PASS",
+    "commit": "6e78341",
+    "remote": "origin/main",
+    "evidence_identity": "backend_family, backend, model, model_version",
+    "validation": {
+      "targeted_tests": "PASS: 25 passed",
+      "full_tests": "PASS: 242 passed; 2 dependency deprecation warnings",
+      "compileall": "PASS",
+      "ruff": "PASS",
+      "pip_check": "PASS",
+      "package_build": "PASS",
+      "diff_check": "PASS"
+    },
+    "known_limitations": [
+      "Real OCR/HTR/table model smoke and external ground-truth accuracy benchmarks remain not run",
+      "Docker runtime, pip-audit, and static type checker remain unavailable in this environment"
+    ]
+  }
 }
