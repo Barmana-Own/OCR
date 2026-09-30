@@ -1,0 +1,37 @@
+services:
+  ocr-platform:
+    build:
+      context: .
+      args:
+        PYTHON_BASE_IMAGE: ${OCR_PYTHON_BASE_IMAGE:-python:3.12-slim}
+    ports:
+      - "8000:8000"
+    environment:
+      OCR_ENVIRONMENT: development
+      OCR_STORAGE_ROOT: /var/lib/ocr-platform/artifacts
+      OCR_TEMPORARY_WORKSPACE: /var/lib/ocr-platform/tmp
+      OCR_EXPORT_STAGING_WORKSPACE: /var/lib/ocr-platform/tmp/exports
+      OCR_MODEL_PATH: /var/lib/ocr-platform/models
+      OCR_CACHE_PATH: /var/lib/ocr-platform/cache
+      OCR_DEVICE: ${OCR_DEVICE:-auto}
+      OCR_MODEL_LOAD_MODE: ${OCR_MODEL_LOAD_MODE:-lazy}
+      OCR_GPU_INFERENCE_CONCURRENCY: ${OCR_GPU_INFERENCE_CONCURRENCY:-1}
+      OCR_MAX_PAGES_IN_FLIGHT: ${OCR_MAX_PAGES_IN_FLIGHT:-1}
+    volumes:
+      - ocr-artifacts:/var/lib/ocr-platform/artifacts
+      - ocr-tmp:/var/lib/ocr-platform/tmp
+      - ocr-models:/var/lib/ocr-platform/models
+      - ocr-cache:/var/lib/ocr-platform/cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  ocr-artifacts:
+  ocr-tmp:
+  ocr-models:
+  ocr-cache:

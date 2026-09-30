@@ -1,0 +1,448 @@
+openapi: 3.1.0
+info:
+  title: OCR Platform
+  version: 0.1.0
+  description: Provenance-preserving OCR and document dataset pipeline.
+paths:
+  /healthz:
+    get:
+      operationId: health
+      responses:
+        "200":
+          description: Service health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /readyz:
+    get:
+      operationId: readiness
+      responses:
+        "200":
+          description: Artifact and metadata storage readiness
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: Required storage or OCR capability is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /metrics:
+    get:
+      operationId: metrics
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Bounded content-free counters and latency summaries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsSnapshot"
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+  /v1/documents:
+    post:
+      operationId: submitDocument
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                mode:
+                  type: string
+                  enum: [fast, balanced, accurate]
+                  default: balanced
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+            maxLength: 255
+      responses:
+        "202":
+          description: Job queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobSubmissionResponse"
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedDocument"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/QueueFull"
+  /v1/jobs/{job_id}:
+    get:
+      operationId: getJob
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Job state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobRecord"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/documents/{document_id}:
+    get:
+      operationId: getDocument
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+      responses:
+        "200":
+          description: Canonical document result
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteDocument
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+      responses:
+        "200":
+          description: Private source, derived artifacts, exports, and local metadata deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentDeletionResult"
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/documents/{document_id}/manifest:
+    get:
+      operationId: getManifest
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+        - $ref: "#/components/parameters/ExportPolicy"
+      responses:
+        "200":
+          description: Export manifest
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/documents/{document_id}/pages/{page}/image:
+    get:
+      operationId: getPageImage
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+        - in: path
+          name: page
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Rendered page image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/documents/{document_id}/exports/{format}:
+    get:
+      operationId: getExport
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+        - in: path
+          name: format
+          required: true
+          schema:
+            type: string
+            enum: [json, txt, md, manifest, pages, crops]
+        - $ref: "#/components/parameters/ExportPolicy"
+      responses:
+        "200":
+          description: Requested export artifact or export file inventory
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /v1/documents/process:
+    post:
+      operationId: processDocument
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Canonical document
+        "4XX":
+          description: Safe validation/authentication error
+        "503":
+          description: Backend dependency unavailable
+components:
+  parameters:
+    JobId:
+      in: path
+      name: job_id
+      required: true
+      schema:
+        type: string
+    DocumentId:
+      in: path
+      name: document_id
+      required: true
+      schema:
+        type: string
+    ExportPolicy:
+      in: query
+      name: policy
+      required: false
+      schema:
+        type: string
+        enum: [strict_verified_only, accepted_verified, all_with_status]
+        default: accepted_verified
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, service, pipeline_version, capabilities]
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        pipeline_version:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    MetricsSnapshot:
+      type: object
+      required: [counters, summaries]
+      properties:
+        counters:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        summaries:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    DocumentDeletionResult:
+      type: object
+      required: [deleted, document_id, artifact_files_deleted, export_files_deleted, job_records_deleted, document_metadata_deleted]
+      properties:
+        deleted:
+          type: boolean
+        document_id:
+          type: string
+        artifact_files_deleted:
+          type: integer
+          minimum: 0
+        export_files_deleted:
+          type: integer
+          minimum: 0
+        job_records_deleted:
+          type: integer
+          minimum: 0
+        document_metadata_deleted:
+          type: boolean
+    JobProgress:
+      type: object
+      required: [current_page, total_pages, completed_pages, stage, percent]
+      properties:
+        current_page:
+          type: integer
+          minimum: 0
+        total_pages:
+          type: integer
+          minimum: 0
+        completed_pages:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+        stage:
+          type: string
+        percent:
+          type: number
+          minimum: 0
+          maximum: 100
+    JobError:
+      type: object
+      required: [code, message, retryable]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        retryable:
+          type: boolean
+    JobRecord:
+      type: object
+      required: [job_id, document_id, status, mode, source_checksum, configuration_hash, submission_fingerprint, progress, created_at]
+      properties:
+        job_id:
+          type: string
+        document_id:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, completed_with_warnings, failed, cancelled]
+        mode:
+          type: string
+          enum: [fast, balanced, accurate]
+        source_checksum:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        configuration_hash:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        submission_fingerprint:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        progress:
+          $ref: "#/components/schemas/JobProgress"
+        error:
+          $ref: "#/components/schemas/JobError"
+        warnings:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+    JobSubmissionResponse:
+      type: object
+      required: [job_id, document_id, status, mode, source_checksum, configuration_hash, progress, created_at, idempotent_replay]
+      properties:
+        job_id:
+          type: string
+        document_id:
+          type: string
+        status:
+          type: string
+        mode:
+          type: string
+        source_checksum:
+          type: string
+        configuration_hash:
+          type: string
+        progress:
+          $ref: "#/components/schemas/JobProgress"
+        created_at:
+          type: string
+          format: date-time
+        idempotent_replay:
+          type: boolean
+    ErrorResponse:
+      type: object
+      required: [code, message, request_id, retryable]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+        retryable:
+          type: boolean
+        job_id:
+          type: string
+        document_id:
+          type: string
+  responses:
+    AuthenticationRequired:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Idempotency conflict or incomplete result
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    QueueFull:
+      description: Worker queue capacity reached
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UnsupportedDocument:
+      description: Unsupported file signature or MIME type
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ValidationError:
+      description: Request or document validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-OCR-API-Key

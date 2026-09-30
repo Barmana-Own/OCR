@@ -1,0 +1,803 @@
+{
+  "project": {
+    "name": "high-accuracy-universal-ocr-document-pipeline",
+    "version": "0.1.0",
+    "repository": "E:\\OCR",
+    "greenfield": true
+  },
+  "active_stage": "complete",
+  "completed_stages": [
+    "01-project-analysis-prompt-engineering",
+    "02-design-system-ui-architecture",
+    "03-frontend-architecture",
+    "04-backend-architecture",
+    "05-database-architecture",
+    "06-api-integration",
+    "07-authentication-authorization",
+    "08-application-security",
+    "09-software-testing",
+    "10-qa-debugging",
+    "11-deployment-production",
+    "12-fullstack-final-review"
+  ],
+  "stage_status": {
+    "01-project-analysis-prompt-engineering": "PASS",
+    "02-design-system-ui-architecture": "PASS",
+    "03-frontend-architecture": "PASS_NOT_APPLICABLE",
+    "04-backend-architecture": "PASS",
+    "05-database-architecture": "PASS",
+    "06-api-integration": "PASS",
+    "07-authentication-authorization": "PASS",
+    "08-application-security": "PASS",
+    "09-software-testing": "PASS",
+    "10-qa-debugging": "PASS",
+    "11-deployment-production": "PASS",
+    "12-fullstack-final-review": "PASS"
+  },
+  "artifacts": {
+    "plan": ".temp/plan-mode/active/universal-ocr-document-pipeline/plan.json",
+    "discovery": ".temp/plan-mode/active/universal-ocr-document-pipeline/discovery.md",
+    "design": ".temp/plan-mode/active/universal-ocr-document-pipeline/design.md",
+    "integrity_baseline": "project-integrity-manifest.md",
+    "architecture_foundation": [
+      "docs/architecture.md",
+      "docs/data-model.md",
+      "docs/processing-flow.md"
+    ],
+    "release_manifest": "release-manifest.json",
+    "final_review": "docs/12-final-review.md",
+    "customer_reports": [
+      "reports/customer-report.en.md",
+      "reports/customer-report.fa.md"
+    ],
+    "technical_reports": [
+      "reports/technical-report.en.md",
+      "reports/technical-report.fa.md"
+    ],
+    "phase3_ingestion": [
+      "docs/phase3-ingestion.md",
+      "src/ocr_platform/ingestion/models.py",
+      "src/ocr_platform/ingestion/pdf_reader.py",
+      "src/ocr_platform/ingestion/image_reader.py",
+      "src/ocr_platform/ingestion/service.py",
+      "src/ocr_platform/ingestion/ports.py",
+      "src/ocr_platform/storage/layout.py",
+      "src/ocr_platform/storage/ports.py",
+      "tests/ingestion/test_phase3_ingestion.py",
+      "src/ocr_platform/quality/ports.py",
+      "tests/quality/test_ports.py"
+    ],
+    "phase4_preprocessing": [
+      "docs/phase4-preprocessing.md",
+      "src/ocr_platform/imaging/geometry.py",
+      "src/ocr_platform/imaging/quality.py",
+      "src/ocr_platform/imaging/profiles.py",
+      "src/ocr_platform/imaging/operations.py",
+      "src/ocr_platform/imaging/service.py",
+      "src/ocr_platform/imaging/tiny_text.py",
+      "tests/imaging/test_quality.py",
+      "tests/imaging/test_profiles.py",
+      "tests/imaging/test_service.py",
+      "tests/imaging/test_tiny_text.py"
+    ],
+    "phase5_layout": [
+      "docs/phase5-layout.md",
+      "src/ocr_platform/domain/models.py",
+      "src/ocr_platform/layout/ports.py",
+      "src/ocr_platform/layout/classification.py",
+      "src/ocr_platform/layout/normalization.py",
+      "src/ocr_platform/layout/heuristic.py",
+      "src/ocr_platform/layout/providers.py",
+      "src/ocr_platform/layout/reading_order.py",
+      "src/ocr_platform/layout/service.py",
+      "src/ocr_platform/layout/__init__.py",
+      "src/ocr_platform/ocr/models.py",
+      "src/ocr_platform/ocr/routing/page_router.py",
+      "src/ocr_platform/pipeline.py",
+      "src/ocr_platform/config/settings.py",
+      ".env.example",
+      "tests/layout/test_contracts.py",
+      "tests/layout/test_heuristic.py",
+      "tests/layout/test_provider_mapping.py",
+      "tests/layout/test_reading_order.py",
+      "tests/integration/test_layout_pipeline.py",
+      "tests/integration/test_pdf_native_first.py"
+    ],
+    "phase6_ocr_routing": [
+      "docs/phase6-ocr-routing.md",
+      "src/ocr_platform/domain/models.py",
+      "src/ocr_platform/ocr/models.py",
+      "src/ocr_platform/ocr/backends/factory.py",
+      "src/ocr_platform/ocr/backends/tesseract.py",
+      "src/ocr_platform/ocr/routing/region_router.py",
+      "src/ocr_platform/handwriting/backends.py",
+      "src/ocr_platform/tables/ports.py",
+      "src/ocr_platform/pipeline.py",
+      "src/ocr_platform/config/settings.py",
+      "tests/ocr/test_contracts.py",
+      "tests/ocr/test_backends.py",
+      "tests/ocr/test_region_router.py",
+      "tests/domain/test_phase6_models.py",
+      "tests/config/test_phase6_settings.py",
+      "tests/integration/test_ocr_routing_pipeline.py",
+      "tests/integration/test_layout_pipeline.py"
+    ]
+  },
+  "architecture_decisions": [
+    "API-first modular monolith; no browser frontend in release 0.1.0.",
+    "Canonical Pydantic hierarchy preserves raw evidence, normalized text, coordinates, provenance, and verification history.",
+    "Native PDF text is attempted before raster OCR; model providers are adapter ports.",
+    "Local immutable artifact storage is the development default; PostgreSQL/S3/Redis remain ports for production deployment.",
+    "OCR-required regions use bounded crop/preprocess variants; selected retry geometry is mapped back to rendered page pixels.",
+    "Mixed PDF pages preserve native text and append OCR blocks for embedded image regions.",
+    "Word geometry is emitted when a backend supplies word boxes; confidence scales are never cross-compared without calibration.",
+    "Phase-specific ingestion classifies every PDF page independently and preserves native evidence before bounded raster rendering.",
+    "PDF/image readers are provider adapters behind PdfExtractor/PageRenderer; application ingestion depends on ArtifactStore rather than a concrete storage implementation.",
+    "Raster inspection uses signature-aware Pillow decoding, EXIF correction, metadata-only PDF image-region discovery, and configured resource limits.",
+    "Phase 4 preprocessing is immutable, profile-driven, bounded, and records per-step artifact/mapping provenance; tiny-text escalation is explicit and verification-required.",
+    "Phase 5 layout is provider-neutral and pre-OCR: normalized geometry, stable taxonomy, explicit route hints, confidence gates, and spatial RTL/LTR reading order are preserved before OCR invocation.",
+    "Phase 6 routes printed OCR, handwriting, tables, and mixed forms through separate provider ports; raw candidates, runtime warnings, structured cells, verification history, and source-derived line crops remain auditable.",
+    "Phase 11 adds retention governance, traversal-safe authenticated deletion, private export staging, review audit records, bounded upload pixels, and content-redacting logs.",
+    "Phase 12 adds validated device/model lifecycle settings, bounded metrics, optional tracing, capability-aware readiness, page checkpoints, DPI/resource profiling, and non-root model-weight-free containers."
+  ],
+  "assumptions": [
+    "Deployments install optional OCR/layout/HTR backends and model weights separately.",
+    "The current environment may not have heavyweight dependencies; unavailable integrations must be reported as NOT_RUN, not simulated."
+  ],
+  "risks": [
+    "Backend confidence scales require per-backend calibration.",
+    "High-DPI/tiny-text processing requires strict resource limits.",
+    "Complex reading order for mixed RTL/multi-column pages is heuristic without a deployed layout model.",
+    "Compressed PDFs may still require operational CPU/time quotas beyond page/pixel limits; processing timeout enforcement remains an application-worker concern.",
+    "Multipage raster containers and advanced capture-quality signals are not yet expanded in ingestion.",
+    "Production HTR and table-cell model runtimes are not installed in the current environment; default adapters fail closed and require review.",
+    "The local worker persists page checkpoints but does not reclaim queued work after process restart; a durable shared queue is required for multi-instance recovery."
+  ],
+  "unresolved_blockers": [],
+  "validation": [
+    {
+      "command": "python -m pytest -q",
+      "status": "PASS",
+      "evidence": "40 passed; 2 dependency deprecation warnings"
+    },
+    {
+      "command": "python -m pytest -q --cov=ocr_platform --cov-report=term-missing",
+      "status": "PASS",
+      "evidence": "40 passed; 82% total coverage; 2 dependency deprecation warnings"
+    },
+    {
+      "command": "ruff check src tests",
+      "status": "PASS",
+      "evidence": "no findings"
+    },
+    {
+      "command": "python -m compileall -q src tests",
+      "status": "PASS",
+      "evidence": "no syntax errors"
+    },
+    {
+      "command": "python -m pip check",
+      "status": "PASS",
+      "evidence": "No broken requirements found"
+    },
+    {
+      "command": "python -m build --no-isolation",
+      "status": "PASS",
+      "evidence": "sdist and wheel built; required wheel contents inspected"
+    },
+    {
+      "command": "OpenAPI YAML parse",
+      "status": "PASS",
+      "evidence": "parser load succeeded"
+    },
+    {
+      "command": "secret-pattern scan",
+      "status": "PASS",
+      "evidence": "no matches"
+    },
+    {
+      "command": "pip-audit",
+      "status": "NOT_RUN",
+      "evidence": "tool not installed"
+    },
+    {
+      "command": "real OCR/model smoke",
+      "status": "NOT_RUN",
+      "evidence": "external executable/model weights unavailable"
+    },
+    {
+      "command": "docker build/smoke",
+      "status": "NOT_RUN",
+      "evidence": "Docker daemon unavailable"
+    },
+    {
+      "command": "external deployment",
+      "status": "NOT_PERFORMED",
+      "evidence": "no authorized target or credentials"
+    },
+    {
+      "command": "independent verifier",
+      "status": "NOT_RUN",
+      "evidence": "verifier unavailable"
+    },
+    {
+      "command": "pytest -q",
+      "status": "PASS",
+      "evidence": "71 passed; 2 dependency deprecation warnings"
+    },
+    {
+      "command": "python -m pytest -q --cov=ocr_platform --cov-report=term-missing",
+      "status": "PASS",
+      "evidence": "71 passed; 84% total coverage; 2 dependency deprecation warnings"
+    },
+    {
+      "command": "ruff check src tests",
+      "status": "PASS",
+      "evidence": "no findings"
+    },
+    {
+      "command": "python -m compileall -q src tests",
+      "status": "PASS",
+      "evidence": "no syntax errors"
+    },
+    {
+      "command": "python -m pip check",
+      "status": "PASS",
+      "evidence": "No broken requirements found"
+    },
+    {
+      "command": "python -m build --no-isolation",
+      "status": "PASS",
+      "evidence": "sdist and wheel built; Phase 3 modules included"
+    },
+    {
+      "command": "pytest -q",
+      "status": "PASS",
+      "evidence": "72 passed; 2 dependency deprecation warnings"
+    },
+    {
+      "command": "python -m pytest -q --cov=ocr_platform --cov-report=term-missing",
+      "status": "PASS",
+      "evidence": "72 passed; 84% total coverage; 2 dependency deprecation warnings"
+    },
+    {
+      "command": "python -m pytest -q --cov=ocr_platform --cov-report=term-missing",
+      "status": "PASS",
+      "evidence": "72 passed; 85% total coverage; 2 dependency deprecation warnings"
+    },
+    {
+      "command": "python -m pytest -q",
+      "status": "PASS",
+      "evidence": "81 passed; 2 dependency deprecation warnings"
+    },
+    {
+      "command": "ruff check src tests",
+      "status": "PASS",
+      "evidence": "no findings"
+    },
+    {
+      "command": "python -m compileall -q src tests",
+      "status": "PASS",
+      "evidence": "no syntax errors"
+    },
+    {
+      "command": "python -m pip check",
+      "status": "PASS",
+      "evidence": "No broken requirements found"
+    },
+    {
+      "command": "python -m pytest -q --cov=ocr_platform --cov-report=term-missing",
+      "status": "PASS",
+      "evidence": "85 passed; 83% total coverage; 2 dependency deprecation warnings"
+    },
+    {
+      "command": "python -m build --no-isolation",
+      "status": "PASS",
+      "evidence": "sdist and wheel built successfully; wheel contains all Phase 4 imaging modules"
+    },
+    {
+      "command": "python -m pytest -q",
+      "status": "PASS",
+      "evidence": "103 passed; 2 dependency deprecation warnings"
+    },
+    {
+      "command": "python -m pytest -q --cov=ocr_platform --cov-report=term-missing",
+      "status": "PASS",
+      "evidence": "103 passed; 84% total coverage; 2 dependency deprecation warnings"
+    },
+    {
+      "command": "ruff check src tests",
+      "status": "PASS",
+      "evidence": "no findings"
+    },
+    {
+      "command": "python -m compileall -q src tests",
+      "status": "PASS",
+      "evidence": "no syntax errors"
+    },
+    {
+      "command": "python -m pip check",
+      "status": "PASS",
+      "evidence": "No broken requirements found"
+    },
+    {
+      "command": "python -m build --no-isolation",
+      "status": "PASS",
+      "evidence": "sdist and wheel built successfully; wheel contains all Phase 5 layout modules"
+    },
+    {
+      "command": "layout wheel contents check",
+      "status": "PASS",
+      "evidence": "required layout contract, fallback, provider, ordering, and service modules present in wheel"
+    },
+    {
+      "command": "secret-pattern scan",
+      "status": "PASS",
+      "evidence": "no matches in repository source/config/docs after excluding generated build artifacts"
+    },
+    {
+      "command": "pip-audit",
+      "status": "NOT_RUN",
+      "evidence": "tool not installed"
+    },
+    {
+      "command": "static type checker",
+      "status": "NOT_RUN",
+      "evidence": "mypy and pyright are not configured or installed"
+    },
+    {
+      "command": "PaddleOCR layout model smoke",
+      "status": "NOT_RUN",
+      "evidence": "optional PaddleOCR runtime/model weights unavailable"
+    }
+  ],
+  "rework_history": [],
+  "next_stage": "NONE",
+  "workflow_status": "COMPLETE",
+  "project_status": "COMPLETE",
+  "phase_3_ingestion": {
+    "status": "PASS",
+    "objective": "Document ingestion and PDF intelligence",
+    "artifacts": [
+      "docs/phase3-ingestion.md",
+      "src/ocr_platform/ingestion/ports.py",
+      "src/ocr_platform/storage/ports.py",
+      "tests/ingestion/test_phase3_ingestion.py",
+      "src/ocr_platform/quality/ports.py",
+      "tests/quality/test_ports.py"
+    ],
+    "limitations": [
+      "Multipage TIFF expansion is not implemented",
+      "Advanced blur/skew/illumination analysis was a Phase 3 limitation and is addressed by the Phase 4 bounded analyzer; model-level quality evaluation remains future work"
+    ]
+  },
+  "phase_4_preprocessing": {
+    "status": "PASS",
+    "objective": "Image preprocessing, quality analysis, and tiny-text recovery",
+    "artifacts": [
+      "docs/phase4-preprocessing.md",
+      "src/ocr_platform/imaging/geometry.py",
+      "src/ocr_platform/imaging/quality.py",
+      "src/ocr_platform/imaging/profiles.py",
+      "src/ocr_platform/imaging/operations.py",
+      "src/ocr_platform/imaging/service.py",
+      "src/ocr_platform/imaging/tiny_text.py",
+      "src/ocr_platform/imaging/preprocess.py",
+      "src/ocr_platform/ingestion/models.py",
+      "src/ocr_platform/ingestion/image_reader.py",
+      "src/ocr_platform/ingestion/pdf_reader.py",
+      "src/ocr_platform/ingestion/service.py",
+      "src/ocr_platform/storage/layout.py",
+      "tests/imaging/test_quality.py",
+      "tests/imaging/test_profiles.py",
+      "tests/imaging/test_service.py",
+      "tests/imaging/test_tiny_text.py",
+      "tests/storage/test_artifacts.py"
+    ],
+    "limitations": [
+      "NumPy/OpenCV acceleration is optional and was not installed in the current validation environment",
+      "Perspective correction remains a heuristic/hook until a validated quadrilateral is supplied",
+      "Real OCR recovery quality remains NOT_RUN without deployed models and labeled references"
+    ]
+  },
+  "phase_5_layout": {
+    "status": "PASS",
+    "objective": "Layout detection, region classification, geometry normalization, and reading order",
+    "artifacts": [
+      "docs/phase5-layout.md",
+      "src/ocr_platform/layout/ports.py",
+      "src/ocr_platform/layout/classification.py",
+      "src/ocr_platform/layout/normalization.py",
+      "src/ocr_platform/layout/heuristic.py",
+      "src/ocr_platform/layout/providers.py",
+      "src/ocr_platform/layout/reading_order.py",
+      "src/ocr_platform/layout/service.py",
+      "src/ocr_platform/layout/__init__.py",
+      "src/ocr_platform/config/settings.py",
+      "src/ocr_platform/ocr/routing/page_router.py",
+      "src/ocr_platform/pipeline.py",
+      "tests/layout",
+      "tests/integration/test_layout_pipeline.py",
+      "tests/integration/test_pdf_native_first.py"
+    ],
+    "limitations": [
+      "The Pillow fallback is conservative and does not claim handwriting, formula, form-field, or table-cell semantics.",
+      "PaddleOCR PP-Structure execution requires optional runtime/model installation and was not available in the current environment.",
+      "Reading-order and column heuristics require labeled benchmark evaluation on representative complex documents."
+    ]
+  },
+  "phase_6_ocr_routing": {
+    "status": "PASS",
+    "objective": "OCR routing for printed text, handwriting, tables, and mixed documents",
+    "artifacts": [
+      "docs/phase6-ocr-routing.md",
+      "src/ocr_platform/ocr/backends/tesseract.py",
+      "src/ocr_platform/ocr/backends/factory.py",
+      "src/ocr_platform/ocr/routing/region_router.py",
+      "src/ocr_platform/handwriting/backends.py",
+      "src/ocr_platform/tables/ports.py",
+      "src/ocr_platform/domain/models.py",
+      "src/ocr_platform/pipeline.py",
+      "tests/ocr/test_contracts.py",
+      "tests/ocr/test_backends.py",
+      "tests/ocr/test_region_router.py",
+      "tests/domain/test_phase6_models.py",
+      "tests/config/test_phase6_settings.py",
+      "tests/integration/test_ocr_routing_pipeline.py"
+    ],
+    "limitations": [
+      "No production HTR or table-cell model is installed; unavailable adapters fail explicitly and never fabricate text.",
+      "Tesseract Persian/English recognition and traineddata availability require deployment smoke tests and labeled benchmarks.",
+      "Form key/value semantics remain spatial evidence and are not inferred from nearest text alone.",
+      "Backend confidence calibration and CER/WER/table accuracy require labeled references."
+    ]
+  },
+  "phase6_validation": [
+    {"command": "python -m pytest -q", "status": "PASS", "evidence": "117 passed; 2 dependency deprecation warnings"},
+    {"command": "python -m pytest -q --cov=ocr_platform --cov-report=term-missing", "status": "PASS", "evidence": "117 passed; 86% total coverage; 2 dependency deprecation warnings"},
+    {"command": "ruff check src tests", "status": "PASS", "evidence": "no findings"},
+    {"command": "python -m compileall -q src tests", "status": "PASS", "evidence": "no syntax errors"},
+    {"command": "python -m pip check", "status": "PASS", "evidence": "No broken requirements found"},
+    {"command": "python -m build --no-isolation", "status": "PASS", "evidence": "sdist and wheel built with Phase 6 OCR routing, HTR, and table modules"},
+    {"command": "pip-audit", "status": "NOT_RUN", "evidence": "tool not installed"},
+    {"command": "static type checker", "status": "NOT_RUN", "evidence": "mypy and pyright are not configured or installed"},
+    {"command": "OCR/HTR/table model smoke", "status": "NOT_RUN", "evidence": "external model runtimes/weights are not available in the current environment"},
+    {"command": "docker build/smoke", "status": "NOT_RUN", "evidence": "Docker daemon unavailable"}
+  ],
+  "phase_7_verification": {
+    "status": "PASS",
+    "objective": "Verification, confidence policy, retry logic, and uncertainty",
+    "artifacts": [
+      "docs/phase7-verification.md",
+      "docs/architecture.md",
+      "docs/data-model.md",
+      "docs/processing-flow.md",
+      "src/ocr_platform/ocr/verification/comparison.py",
+      "src/ocr_platform/ocr/verification/scoring.py",
+      "src/ocr_platform/ocr/verification/retry.py",
+      "src/ocr_platform/ocr/verification/engine.py",
+      "src/ocr_platform/domain/models.py",
+      "src/ocr_platform/config/settings.py",
+      "src/ocr_platform/pipeline.py",
+      "src/ocr_platform/storage/layout.py",
+      "src/ocr_platform/dataset/exporter.py",
+      "tests/ocr/test_phase7_comparison.py",
+      "tests/ocr/test_phase7_scoring.py",
+      "tests/ocr/test_phase7_engine.py",
+      "tests/ocr/test_phase7_retry.py",
+      "tests/domain/test_phase7_models.py",
+      "tests/config/test_phase7_settings.py",
+      "tests/storage/test_phase7_review_artifacts.py",
+      "tests/integration/test_phase7_review_artifacts.py"
+    ],
+    "limitations": [
+      "Confidence calibration remains backend-specific and requires labeled deployment data.",
+      "Real OCR/HTR/table model quality and tiny-text recovery remain NOT_RUN without deployed model weights.",
+      "Review artifacts use the configured artifact store; durable review queues and human annotation UI remain future infrastructure.",
+      "No general-purpose LLM correction is used; raw OCR remains authoritative evidence for review."
+    ]
+  },
+  "phase7_validation": [
+    {"command": "python -m pytest -q", "status": "PASS", "evidence": "142 passed; 2 dependency deprecation warnings"},
+    {"command": "python -m pytest -q --cov=ocr_platform --cov-report=term-missing", "status": "PASS", "evidence": "142 passed; 86% total coverage; 2 dependency deprecation warnings"},
+    {"command": "ruff check src tests", "status": "PASS", "evidence": "no findings"},
+    {"command": "python -m compileall -q src tests", "status": "PASS", "evidence": "no syntax errors"},
+    {"command": "python -m pip check", "status": "PASS", "evidence": "No broken requirements found"},
+    {"command": "python -m build --no-isolation", "status": "PASS", "evidence": "sdist and wheel built successfully with Phase 7 verification modules"},
+    {"command": "secret-pattern scan", "status": "PASS", "evidence": "no private-key, API-key, token, or hardcoded-password matches in source, tests, docs, or manifests"},
+    {"command": "pip-audit", "status": "NOT_RUN", "evidence": "tool not installed"},
+    {"command": "static type checker", "status": "NOT_RUN", "evidence": "mypy and pyright are not configured or installed"},
+    {"command": "OCR/HTR/table model smoke", "status": "NOT_RUN", "evidence": "external model runtimes/weights are not available"},
+    {"command": "docker build/smoke", "status": "NOT_RUN", "evidence": "Docker daemon unavailable"}
+  ],
+  "phase_8_normalization_dataset": {
+    "status": "PASS",
+    "objective": "Text normalization, provenance, dataset packaging, and export",
+    "artifacts": [
+      "docs/phase8-dataset-export.md",
+      "src/ocr_platform/normalization/persian.py",
+      "src/ocr_platform/config/settings.py",
+      "src/ocr_platform/domain/models.py",
+      "src/ocr_platform/dataset/exporter.py",
+      "src/ocr_platform/dataset/__init__.py",
+      "tests/normalization/test_persian.py",
+      "tests/config/test_phase8_settings.py",
+      "tests/integration/test_phase8_normalization_pipeline.py",
+      "tests/dataset/test_phase8_export.py"
+    ],
+    "capabilities": [
+      "Versioned configurable Persian/mixed-script normalization with raw-text preservation",
+      "Environment-backed normalization policy included in configuration hashes and canonical document metadata",
+      "Provider-neutral deterministic dataset exporter with strict_verified_only, accepted_verified, and all_with_status policies",
+      "Structured page manifests and line crop labels with page-coordinate mapping and model/provenance inventory",
+      "Status counts and explicit review partitioning that prevent uncertain labels from entering default exports"
+    ],
+    "limitations": [
+      "Model-level OCR/HTR/table accuracy and confidence calibration remain NOT_RUN without deployed model runtimes and labeled references.",
+      "Export timestamp fields are audit metadata; export identity is bound to document processing identity and policy.",
+      "pip-audit and static type checks remain NOT_RUN because the tools are not installed/configured."
+    ]
+  },
+  "phase8_validation": [
+    {"command": "python -m pytest -q", "status": "PASS", "evidence": "156 passed; 2 dependency deprecation warnings"},
+    {"command": "python -m pytest -q --cov=ocr_platform --cov-report=term-missing", "status": "PASS", "evidence": "156 passed; 86% total coverage; 2 dependency deprecation warnings"},
+    {"command": "ruff check src tests", "status": "PASS", "evidence": "no findings"},
+    {"command": "python -m compileall -q src tests", "status": "PASS", "evidence": "no syntax errors"},
+    {"command": "python -m pip check", "status": "PASS", "evidence": "No broken requirements found"},
+    {"command": "python -m build --no-isolation", "status": "PASS", "evidence": "sdist and wheel built successfully with Phase 8 normalization and dataset modules"},
+    {"command": "wheel contents check", "status": "PASS", "evidence": "wheel contains normalization, dataset exporter, domain, and test-independent runtime modules"},
+    {"command": "secret-pattern scan", "status": "PASS", "evidence": "no private-key, API-key, token, or hardcoded-password matches in source, tests, docs, or safe manifests"},
+    {"command": "pip-audit", "status": "NOT_RUN", "evidence": "tool not installed"},
+    {"command": "static type checker", "status": "NOT_RUN", "evidence": "mypy and pyright are not configured or installed"},
+    {"command": "OCR/HTR/table model smoke", "status": "NOT_RUN", "evidence": "external model runtimes and weights are unavailable"},
+    {"command": "docker build/smoke", "status": "NOT_RUN", "evidence": "Docker daemon unavailable"}
+  ],
+  "phase9_api_orchestration": {
+    "status": "PASS",
+    "objective": "FastAPI, job orchestration, storage, workers, upload validation, and policy-aware retrieval",
+    "artifacts": [
+      "docs/phase9-api-orchestration.md",
+      "docs/06-api-design.md",
+      "docs/openapi.yaml",
+      "src/ocr_platform/api/app.py",
+      "src/ocr_platform/api/schemas.py",
+      "src/ocr_platform/api/uploads.py",
+      "src/ocr_platform/workers/models.py",
+      "src/ocr_platform/workers/ports.py",
+      "src/ocr_platform/workers/policy.py",
+      "src/ocr_platform/workers/orchestrator.py",
+      "src/ocr_platform/database/local.py",
+      "src/ocr_platform/database/ports.py",
+      "src/ocr_platform/storage/artifacts.py",
+      "src/ocr_platform/pipeline.py",
+      "tests/api/test_app.py",
+      "tests/api/test_phase9_api.py",
+      "tests/workers/test_phase9_workers.py",
+      "tests/storage/test_phase9_repositories.py",
+      "tests/config/test_phase9_settings.py",
+      ".env.example",
+      "README.md",
+      "project-integrity-manifest.md"
+    ],
+    "capabilities": [
+      "Bounded signature-first multipart upload validation with safe filenames and MIME checks",
+      "Fast, balanced, and accurate configuration-backed processing modes",
+      "Deterministic source/configuration/mode/idempotency fingerprints and replay protection",
+      "Bounded non-blocking worker execution with persisted page/stage progress and safe failures",
+      "Atomic local job/document metadata persistence behind repository ports",
+      "Canonical document, manifest, page-image, and policy-aware export retrieval"
+    ],
+    "limitations": [
+      "The default executor is single-process and does not recover queued work across process restart",
+      "Shared PostgreSQL/object storage, distributed queue workers, signed artifact URLs, gateway rate limiting, and production restore testing remain deployment work",
+      "pip-audit, static type checking, Docker smoke, and real OCR/HTR/table model smoke remain NOT_RUN because the tools or model runtimes are unavailable"
+    ]
+  },
+  "phase9_validation": [
+    {"command": "python -m pytest -q --cov=ocr_platform --cov-report=term-missing", "status": "PASS", "evidence": "169 passed; 86% total coverage; 2 dependency deprecation warnings"},
+    {"command": "ruff check src tests", "status": "PASS", "evidence": "no findings"},
+    {"command": "python -m compileall -q src tests", "status": "PASS", "evidence": "no syntax errors"},
+    {"command": "python -m pip check", "status": "PASS", "evidence": "No broken requirements found"},
+    {"command": "python -m build --no-isolation", "status": "PASS", "evidence": "sdist and wheel built successfully with API, database, storage, and worker modules"},
+    {"command": "wheel contents check", "status": "PASS", "evidence": "wheel contains API upload validation, local repositories, worker orchestration, and mode policy modules"},
+    {"command": "generated OpenAPI path check", "status": "PASS", "evidence": "all Phase 9 routes are present in FastAPI-generated OpenAPI"},
+    {"command": "docs/openapi.yaml parse", "status": "PASS", "evidence": "OpenAPI YAML parses and includes asynchronous submission"},
+    {"command": "secret-pattern scan", "status": "PASS", "evidence": "no private-key, API-key, or token matches in source, tests, docs, manifests, or safe templates"},
+    {"command": "pip-audit", "status": "NOT_RUN", "evidence": "tool not installed"},
+    {"command": "static type checker", "status": "NOT_RUN", "evidence": "mypy and pyright are not configured or installed"},
+    {"command": "Docker smoke", "status": "NOT_RUN", "evidence": "Docker daemon unavailable"},
+    {"command": "real OCR/HTR/table model smoke", "status": "NOT_RUN", "evidence": "external model runtimes and weights are unavailable"}
+  ],
+  "phase10_benchmarks": {
+    "status": "PASS",
+    "objective": "OCR benchmarks, regression tests, tiny-text evaluation, reporting, and non-destructive quality gates",
+    "artifacts": [
+      "docs/phase10-benchmarks.md",
+      "src/ocr_platform/benchmarks/__init__.py",
+      "src/ocr_platform/benchmarks/models.py",
+      "src/ocr_platform/benchmarks/dataset.py",
+      "src/ocr_platform/benchmarks/metrics.py",
+      "src/ocr_platform/benchmarks/tiny_text.py",
+      "src/ocr_platform/benchmarks/comparison.py",
+      "src/ocr_platform/benchmarks/gates.py",
+      "src/ocr_platform/benchmarks/reporting.py",
+      "src/ocr_platform/benchmarks/runner.py",
+      "src/ocr_platform/benchmarks/run.py",
+      "benchmarks/data/README.md",
+      "benchmarks/data/manifest.json",
+      "benchmarks/data/ground_truth.json",
+      "benchmarks/data/quality-gates.json",
+      "benchmarks/data/predictions/current.json",
+      "tests/benchmarks/conftest.py",
+      "tests/benchmarks/test_contracts.py",
+      "tests/benchmarks/test_dataset.py",
+      "tests/benchmarks/test_metrics.py",
+      "tests/benchmarks/test_tiny_text.py",
+      "tests/benchmarks/test_runner.py",
+      "tests/benchmarks/test_comparison.py",
+      "tests/benchmarks/test_cli.py",
+      "pyproject.toml",
+      ".github/workflows/ci.yml",
+      "project-integrity-manifest.md"
+    ],
+    "capabilities": [
+      "Versioned synthetic ground truth and separate stored prediction contracts with page, line, geometry, reading-order, table-cell, and review labels",
+      "Category-level CER/WER, exact-line, line detection, reading-order, table-cell, acceptance, verification, human-review, and backend-disagreement metrics",
+      "Tiny-text first-pass, high-DPI, crop-upscaled, and verified-final CER evidence with recovery improvement",
+      "Deterministic JSON/Markdown reports containing dataset/config/model/hardware provenance",
+      "Directional baseline comparison for branch, backend, DPI, and preprocessing variants",
+      "Configurable non-destructive quality gates with opt-in CI process failure",
+      "Safe dataset-relative artifact loading and explicit benchmark/unit/model/GPU test separation"
+    ],
+    "limitations": [
+      "The checked-in dataset is synthetic and validates contracts/metrics rather than production OCR accuracy",
+      "Real OCR/HTR/table model benchmark execution remains NOT_RUN because model runtimes and weights are unavailable",
+      "GPU benchmarks remain opt-in and NOT_RUN in the current environment",
+      "pip-audit and static type checking remain NOT_RUN because the tools are not installed/configured",
+      "Docker smoke remains NOT_RUN because the Docker daemon is unavailable"
+    ]
+  },
+  "phase10_validation": [
+    {"command": "python -m pytest -q --cov=ocr_platform --cov-report=term-missing", "status": "PASS", "evidence": "183 passed; 87% total coverage; 2 dependency deprecation warnings"},
+    {"command": "python -m pytest -q tests --ignore=tests/benchmarks -m \"not model and not gpu\"", "status": "PASS", "evidence": "169 passed; 2 dependency deprecation warnings"},
+    {"command": "python -m pytest -q tests/benchmarks -m benchmark", "status": "PASS", "evidence": "14 passed"},
+    {"command": "ruff check src tests", "status": "PASS", "evidence": "no findings"},
+    {"command": "python -m compileall -q src tests", "status": "PASS", "evidence": "no syntax errors"},
+    {"command": "python -m pip check", "status": "PASS", "evidence": "No broken requirements found"},
+    {"command": "python -m build --no-isolation", "status": "PASS", "evidence": "sdist and wheel built; benchmark package modules present"},
+    {"command": "benchmark CLI smoke with configured gates", "status": "PASS", "evidence": "accurate mode generated JSON and Markdown with 13 category records, passing gates, and tiny-text recovery improvement 0.0555556"},
+    {"command": "wheel contents check", "status": "PASS", "evidence": "wheel contains benchmarks/models.py, metrics.py, and run.py"},
+    {"command": "secret-pattern scan", "status": "PASS", "evidence": "no private-key, API-key, GitHub-token, or bot-token matches in source, tests, docs, benchmark fixtures, or safe environment template"},
+    {"command": "pip-audit", "status": "NOT_RUN", "evidence": "tool not installed"},
+    {"command": "static type checker", "status": "NOT_RUN", "evidence": "mypy and pyright are not configured or installed"},
+    {"command": "real OCR/HTR/table and GPU benchmark smoke", "status": "NOT_RUN", "evidence": "external model runtimes, weights, and GPU benchmark environment are unavailable"},
+    {"command": "Docker smoke", "status": "NOT_RUN", "evidence": "Docker CLI is present but the Docker daemon is unavailable"}
+  ],
+  "phase11_security_privacy": {
+    "status": "PASS",
+    "objective": "Sensitive-document safeguards, retention governance, private artifact lifecycle, deletion, and training-data auditability",
+    "artifacts": [
+      "docs/phase11-security-privacy.md",
+      "src/ocr_platform/governance/models.py",
+      "src/ocr_platform/governance/retention.py",
+      "src/ocr_platform/governance/lifecycle.py",
+      "src/ocr_platform/storage/artifacts.py",
+      "src/ocr_platform/database/local.py",
+      "src/ocr_platform/observability/logging.py",
+      "tests/security/test_phase11_governance.py",
+      "tests/security/test_phase11_uploads.py",
+      "tests/api/test_phase11_security.py",
+      "tests/storage/test_phase11_lifecycle.py",
+      "tests/workers/test_phase11_lifecycle.py",
+      "tests/dataset/test_phase11_staging.py",
+      "tests/observability/test_logging.py"
+    ],
+    "limitations": [
+      "Automatic retention workers, shared object storage, tenant authorization, malware scanning, and restore verification remain deployment-specific."
+    ]
+  },
+  "phase11_validation": [
+    {"command": "python -m pytest -q --cov=ocr_platform --cov-report=term-missing", "status": "PASS", "evidence": "213 passed; 86% total coverage; 2 dependency deprecation warnings"},
+    {"command": "ruff check src tests scripts", "status": "PASS", "evidence": "no findings"},
+    {"command": "python -m compileall -q src tests scripts", "status": "PASS", "evidence": "no syntax errors"},
+    {"command": "python -m pip check", "status": "PASS", "evidence": "No broken requirements found"},
+    {"command": "python -m build --no-isolation", "status": "PASS", "evidence": "sdist and wheel built successfully"},
+    {"command": "OpenAPI YAML and generated route checks", "status": "PASS", "evidence": "metrics, authenticated deletion, readiness capability schema, and existing routes validated"},
+    {"command": "docker compose config", "status": "PASS", "evidence": "local topology parsed without starting services"},
+    {"command": "secret-pattern scan", "status": "PASS", "evidence": "no private-key, token, or hardcoded-credential matches"},
+    {"command": "pip-audit", "status": "NOT_RUN", "evidence": "tool not installed"},
+    {"command": "static type checker", "status": "NOT_RUN", "evidence": "mypy and pyright unavailable"},
+    {"command": "Docker build/smoke", "status": "NOT_RUN", "evidence": "Docker daemon unavailable"},
+    {"command": "real OCR/HTR/table and GPU smoke", "status": "NOT_RUN", "evidence": "external runtimes, weights, and GPU environment unavailable"}
+  ],
+  "phase12_production_performance_observability": {
+    "status": "PASS",
+    "objective": "Production deployment, bounded performance, failure recovery, model lifecycle, and observability",
+    "artifacts": [
+      "docs/phase12-production.md",
+      "src/ocr_platform/ocr/runtime.py",
+      "src/ocr_platform/observability/metrics.py",
+      "src/ocr_platform/observability/tracing.py",
+      "src/ocr_platform/pipeline.py",
+      "src/ocr_platform/workers/models.py",
+      "src/ocr_platform/workers/orchestrator.py",
+      "scripts/profile_pipeline.py",
+      "tests/ocr/test_phase12_runtime.py",
+      "tests/observability/test_phase12_metrics.py",
+      "tests/api/test_phase12_health.py",
+      "tests/integration/test_phase12_recovery.py",
+      "tests/scripts/test_phase12_profile.py",
+      "Dockerfile",
+      ".dockerignore",
+      "compose.yaml"
+    ],
+    "capabilities": [
+      "CPU/CUDA device selection with safe auto fallback and lazy/startup model lifecycle contracts",
+      "Bounded worker, queue, page, pixel, crop, and inference concurrency settings",
+      "Content-free authenticated metrics and optional OpenTelemetry-compatible stage tracing",
+      "Page failure isolation with completed-with-warnings and persisted completed-page checkpoints",
+      "DPI/time/memory/artifact-size profiling without requiring model weights for basic execution",
+      "Non-root container runtime with separate private artifact, temporary, model, and cache volumes"
+    ],
+    "limitations": [
+      "The current local executor is single-process and does not reclaim queued work after restart; use a durable queue/worker adapter before multi-instance public deployment.",
+      "Docker image build, GPU/model smoke, load tests, and external deployment were not performed in the current environment."
+    ]
+  },
+  "phase12_validation": [
+    {"command": "python -m pytest -q --cov=ocr_platform --cov-report=term-missing", "status": "PASS", "evidence": "213 passed; 86% total coverage"},
+    {"command": "python -m pytest -q tests/integration/test_phase12_recovery.py tests/scripts/test_phase12_profile.py tests/workers/test_phase9_workers.py", "status": "PASS", "evidence": "7 passed; page recovery, checkpoint persistence, and profiling smoke verified"},
+    {"command": "ruff check src tests scripts", "status": "PASS", "evidence": "no findings"},
+    {"command": "python -m compileall -q src tests scripts", "status": "PASS", "evidence": "no syntax errors"},
+    {"command": "python -m pip check", "status": "PASS", "evidence": "No broken requirements found"},
+    {"command": "python -m build --no-isolation", "status": "PASS", "evidence": "package includes runtime, observability, governance, and worker modules"},
+    {"command": "docker compose config", "status": "PASS", "evidence": "CPU/default and mounted model/cache volume topology parsed"},
+    {"command": "pip-audit", "status": "NOT_RUN", "evidence": "tool not installed"},
+    {"command": "static type checker", "status": "NOT_RUN", "evidence": "mypy and pyright unavailable"},
+    {"command": "Docker build/smoke", "status": "NOT_RUN", "evidence": "Docker daemon unavailable"},
+    {"command": "GPU/model smoke and external deployment", "status": "NOT_PERFORMED", "evidence": "no permitted runtime, weights, GPU target, or deployment credentials"}
+  ],
+  "phase13_final_integration_audit": {
+    "status": "PASS",
+    "objective": "End-to-end integration audit, canonical data-contract verification, anti-pattern hardening, and final OCR provenance checks",
+    "artifacts": [
+      "docs/final-audit.md",
+      "scripts/phase13_integration_audit.py",
+      "tests/ingestion/test_phase3_ingestion.py",
+      "src/ocr_platform/imaging/policy.py",
+      "src/ocr_platform/imaging/tiny_text.py",
+      "src/ocr_platform/ocr/verification/retry.py",
+      "src/ocr_platform/ingestion/models.py",
+      "src/ocr_platform/pipeline.py",
+      "scripts/profile_pipeline.py"
+    ],
+    "capabilities": [
+      "Eleven non-sensitive synthetic scenarios cover native Persian, scanned Persian, mixed Persian-English, phone photo, tiny text, handwriting, mixed printed/handwritten form, tables, multi-column pages, low-quality scans, and mixed native/scanned PDFs",
+      "Canonical JSON schema validation, page/line/cell geometry, document/page/crop provenance, backend/model/configuration metadata, raw-versus-normalized reproducibility, retained candidates, review states, and deterministic exports are audited",
+      "Tiny-text audit verifies 600 DPI escalation, bounded 2x/3x/4x region scaling, three controlled variants, and source-coordinate mapping preservation",
+      "OCR provider boundaries, retry bounds, centralized DPI defaults, silent exception patterns, silent LLM correction paths, production placeholders, secret patterns, and Compose/OpenAPI/state manifests were reviewed"
+    ],
+    "limitations": [
+      "The audit uses deterministic contract adapters inside the audit script; they are not production OCR/HTR/table providers and are never selected by production factories",
+      "Real OCR accuracy, licensed model behavior, GPU resource use, Docker runtime behavior, pip-audit, static typing, and external deployment remain NOT_RUN or NOT_PERFORMED in this environment"
+    ]
+  },
+  "phase13_validation": [
+    {"command": "python scripts/phase13_integration_audit.py --output docs/final-audit.md", "status": "PASS", "evidence": "11/11 scenarios passed; 18 lines and 4 table cells audited; tiny-text escalation/mapping and deterministic exports passed"},
+    {"command": "python -m ocr_platform.benchmarks.run --dataset benchmarks/data --mode accurate --output var/phase13-benchmark-results.json --markdown-output var/phase13-benchmark-results.md --quality-gates benchmarks/data/quality-gates.json --fail-on-gate", "status": "PASS", "evidence": "synthetic-phase10-1.0.0, 13 categories, configured gates passed; overall CER 0.0, line-detection recall 1.0, tiny-text recovery improvement 0.0555555556"},
+    {"command": "python -m pytest -q tests/ingestion/test_phase3_ingestion.py", "status": "PASS", "evidence": "12 passed; tiny_text_suspected routing regression covered"},
+    {"command": "python -m pytest -q --cov=ocr_platform --cov-report=term-missing", "status": "PASS", "evidence": "214 passed; 86% total coverage; 2 dependency deprecation warnings"},
+    {"command": "ruff check src tests scripts", "status": "PASS", "evidence": "no findings"},
+    {"command": "python -m compileall -q src tests scripts", "status": "PASS", "evidence": "no syntax errors"},
+    {"command": "python -m pip check", "status": "PASS", "evidence": "No broken requirements found"},
+    {"command": "python -m build --no-isolation", "status": "PASS", "evidence": "sdist and wheel built successfully after integration hardening"},
+    {"command": "docker compose config", "status": "PASS", "evidence": "local production-like topology parsed without starting services"},
+    {"command": "OpenAPI, project-state, and release-manifest parse", "status": "PASS", "evidence": "YAML/JSON documents loaded successfully"},
+    {"command": "secret-pattern scan", "status": "PASS", "evidence": "no private-key, token, or hardcoded-credential matches"},
+    {"command": "provider-boundary, silent-exception, retry-budget, raw-text, and LLM-correction audit", "status": "PASS", "evidence": "provider implementations remain isolated in adapter modules; no swallowed exception pattern or silent production correction path found"},
+    {"command": "pip-audit", "status": "NOT_RUN", "evidence": "tool not installed"},
+    {"command": "static type checker", "status": "NOT_RUN", "evidence": "mypy and pyright unavailable"},
+    {"command": "Docker build/runtime, GPU/model smoke, and external deployment", "status": "NOT_PERFORMED", "evidence": "Docker daemon, optional model runtimes/weights, GPU runner, and authorized deployment target unavailable"}
+  ],
+  "next_incremental_phase": "Permitted model-backed OCR/HTR/table deployment and labeled accuracy benchmarking"
+}

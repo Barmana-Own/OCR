@@ -1,0 +1,72 @@
+"""Versioned OCR benchmark contracts and evaluation utilities."""
+
+from .comparison import compare_metrics
+from .dataset import DatasetLoadError, LoadedBenchmarkDataset, load_dataset
+from .gates import QualityGateError, evaluate_quality_gates, load_quality_gate_config
+from .metrics import evaluate_category, evaluate_dataset
+from .models import (
+    BackendCandidate,
+    BenchmarkCategory,
+    BenchmarkDocumentReference,
+    BenchmarkManifest,
+    BenchmarkMetrics,
+    BenchmarkReport,
+    CategoryMetrics,
+    GroundTruthDataset,
+    GroundTruthDocument,
+    GroundTruthLine,
+    GroundTruthPage,
+    GroundTruthTableCell,
+    PredictionDataset,
+    PredictionDocument,
+    PredictionLine,
+    PredictionPage,
+    PredictionTableCell,
+    QualityGateConfig,
+    QualityGateEvaluation,
+    QualityGateResult,
+    QualityGateRule,
+    TinyTextMetrics,
+    TinyTextStage,
+    TinyTextStageCandidate,
+)
+from .runner import run_benchmark
+from .tiny_text import evaluate_tiny_text
+
+__all__ = [
+    "BackendCandidate",
+    "BenchmarkCategory",
+    "BenchmarkDocumentReference",
+    "BenchmarkManifest",
+    "BenchmarkMetrics",
+    "BenchmarkReport",
+    "CategoryMetrics",
+    "compare_metrics",
+    "DatasetLoadError",
+    "GroundTruthDataset",
+    "GroundTruthDocument",
+    "GroundTruthLine",
+    "GroundTruthPage",
+    "GroundTruthTableCell",
+    "LoadedBenchmarkDataset",
+    "PredictionDataset",
+    "PredictionDocument",
+    "PredictionLine",
+    "PredictionPage",
+    "PredictionTableCell",
+    "QualityGateConfig",
+    "QualityGateError",
+    "QualityGateEvaluation",
+    "QualityGateResult",
+    "QualityGateRule",
+    "evaluate_category",
+    "evaluate_dataset",
+    "evaluate_quality_gates",
+    "evaluate_tiny_text",
+    "load_quality_gate_config",
+    "run_benchmark",
+    "TinyTextStage",
+    "TinyTextStageCandidate",
+    "TinyTextMetrics",
+    "load_dataset",
+]

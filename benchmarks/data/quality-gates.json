@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0.0",
+  "gates": [
+    {
+      "name": "overall-line-recall",
+      "metric": "line_detection_recall",
+      "category": "overall",
+      "minimum": 1.0
+    },
+    {
+      "name": "overall-cer",
+      "metric": "cer",
+      "category": "overall",
+      "maximum": 0.0
+    },
+    {
+      "name": "tiny-text-recovery-is-measurable",
+      "metric": "tiny_text.recovery_improvement",
+      "category": "tiny_text",
+      "minimum": 0.0
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "dataset_version": "synthetic-phase10-1.0.0",
+  "ground_truth_uri": "ground_truth.json",
+  "prediction_uris": {
+    "current": "predictions/current.json"
+  },
+  "quality_gates_uri": "quality-gates.json",
+  "documents": [
+    {"document_id": "synthetic-clean-persian", "category": "clean_persian"},
+    {"document_id": "synthetic-clean-english", "category": "clean_english"},
+    {"document_id": "synthetic-mixed-persian-english", "category": "mixed_persian_english"},
+    {"document_id": "synthetic-low-quality-scan", "category": "low_quality_scan"},
+    {"document_id": "synthetic-phone-photo", "category": "phone_photo"},
+    {"document_id": "synthetic-skewed-perspective", "category": "skewed_perspective"},
+    {"document_id": "synthetic-tiny-text", "category": "tiny_text"},
+    {"document_id": "synthetic-handwritten-persian", "category": "handwritten_persian"},
+    {"document_id": "synthetic-form-card", "category": "form_card"},
+    {"document_id": "synthetic-table", "category": "table"},
+    {"document_id": "synthetic-multi-column", "category": "multi_column"},
+    {"document_id": "synthetic-native-text-pdf", "category": "native_text_pdf"},
+    {"document_id": "synthetic-mixed-native-scanned-pdf", "category": "mixed_native_scanned_pdf"}
+  ]
+}
