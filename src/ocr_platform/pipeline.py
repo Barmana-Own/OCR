@@ -123,8 +123,19 @@ class DocumentPipeline:
             else (
                 build_handwriting_backend(
                     settings.handwriting_backend,
+                    model_id=settings.handwriting_model_id,
+                    processor_id=settings.handwriting_processor_id,
+                    revision=settings.handwriting_revision,
                     model_path=str(settings.handwriting_model_path),
                     device=settings.device,
+                    local_files_only=settings.handwriting_local_files_only,
+                    trust_remote_code=settings.handwriting_trust_remote_code,
+                    max_generation_length=settings.handwriting_max_generation_length,
+                    cache_dir=str(settings.cache_path),
+                    language=settings.handwriting_language,
+                    script=settings.handwriting_script,
+                    max_image_pixels=settings.max_crop_pixels,
+                    timeout_seconds=settings.ocr_backend_timeout_seconds,
                 ),
             )
         )
@@ -663,6 +674,44 @@ class DocumentPipeline:
                     region_warnings.extend(high_warnings)
                 except (InvalidDocumentError, ProcessingError, ArtifactStorageError) as exc:
                     region_warnings.append(f"high-quality retry failed: {exc}")
+            htr_succeeded = any(
+                result.method == ExtractionMethod.HANDWRITING_RECOGNITION and bool(result.lines)
+                for result in results
+            )
+            printed_route_already_attempted = RegionRoute.PRINTED in route.routes
+            if (
+                route.requires_handwriting
+                and not htr_succeeded
+                and not printed_route_already_attempted
+                and self.settings.handwriting_fallback_to_printed
+            ):
+                fallback_results, fallback_warnings = self._recognize_region(
+                    image_bytes,
+                    rendered_page,
+                    region,
+                    backends=self.backends,
+                    max_results=max(1, self.settings.verification_max_candidates - len(results)),
+                )
+                region_warnings.extend(fallback_warnings)
+                if fallback_results:
+                    results.extend(
+                        replace(
+                            result,
+                            runtime_metadata=(
+                                *result.runtime_metadata,
+                                ("route_fallback", "printed_ocr_for_handwriting"),
+                            ),
+                            warnings=(
+                                *result.warnings,
+                                "printed_ocr_fallback_for_handwriting",
+                            ),
+                        )
+                        for result in fallback_results
+                    )
+                    region_warnings.append(
+                        f"{region.region_id}: HTR unavailable or failed; "
+                        "printed OCR fallback was used and requires review"
+                    )
             warnings.extend(region_warnings)
             if not results:
                 warnings.append(f"{region.region_id}: no OCR backend produced a result")
@@ -680,7 +729,8 @@ class DocumentPipeline:
                 )
                 continue
             htr_succeeded = any(
-                result.method == ExtractionMethod.HANDWRITING_RECOGNITION for result in results
+                result.method == ExtractionMethod.HANDWRITING_RECOGNITION and bool(result.lines)
+                for result in results
             )
             block, block_warnings = self._block_from_results(
                 document_id,

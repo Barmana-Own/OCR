@@ -28,7 +28,7 @@ Office pages with embedded visual regions retain an explicit visual-OCR requirem
 
 - `PaddleOcrBackend` is a lazy printed OCR adapter with backend-family metadata and support for common PaddleOCR 2.x/3.x result shapes.
 - `PaddleStructureTableBackend` maps provider cell geometry/text into typed row/column cells and emits warnings when the provider omits structure.
-- `TransformersHandwritingBackend` loads only an explicitly configured local model with `local_files_only=True`; it reports no fabricated confidence.
+- `TransformersHandwritingBackend` loads an explicitly configured model ID or local path with `local_files_only=True` by default, bounded generation, lazy imports, and no fabricated confidence. Remote downloads and remote model code require explicit settings; language/script claims remain `und`/`Unknown` until a selected model is validated.
 - When a table backend is unavailable, printed OCR still runs on table regions and structure capability/review warnings are retained.
 
 Install optional capabilities explicitly:

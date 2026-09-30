@@ -81,7 +81,7 @@ ingest
 4. OCRCandidate, VerificationRecord, and typed extraction metadata are now canonical domain models; the legacy verification records remain compatibility aliases where required.
 5. ProcessingWarning and ProcessingManifest are implemented typed models. Legacy warning strings remain only for serialized compatibility.
 6. Phase 4 adds a bounded Pillow quality analyzer for brightness, contrast, sharpness/blur, skew, perspective hints, background variation, text scale, and compression evidence. These remain routing hints rather than absolute truth; real model-quality evaluation still requires labeled data.
-7. LayoutBackend, HandwritingBackend, and TableExtractionBackend are available as ports. The default pipeline executes LayoutAnalysisService with a bounded Pillow projection detector before OCR routing; printed OCR is adapter-backed, while HTR and table capability remain explicit fail-closed adapters until real model runtimes are deployed.
+7. LayoutBackend, HandwritingBackend, and TableExtractionBackend are available as ports. The default pipeline executes LayoutAnalysisService with a bounded Pillow projection detector before OCR routing; printed OCR is adapter-backed, while HTR and table capability remain explicit fail-closed adapters until a deployment provisions the selected optional model runtimes.
 8. DocumentPipeline is intentionally the 0.1.0 orchestration boundary, but it owns multiple phases. Future extraction into application services must preserve the same canonical output and provenance behavior.
 9. get_settings() caches a module-level settings object. It is safe for the current process-start configuration model, but application construction should prefer explicit settings injection if runtime reconfiguration or multi-tenant configuration is introduced.
 10. No relational migrations or durable review repository are shipped. Phase 9 does ship atomic local job/document repositories; shared relational persistence and queue recovery remain an explicit deployment boundary, not an implicit in-memory production fallback.
@@ -102,7 +102,7 @@ The repository remains a modular monolith. Boundaries are dependency boundaries,
 | Layout | layout/ports.py, classification.py, normalization.py, heuristic.py, providers.py, reading_order.py, service.py | provider-neutral regions/lines, stable taxonomy, geometry clipping, routing hints, column/RTL spatial order, backend provenance | text normalization, OCR winner selection, and provider SDK imports outside adapters |
 | Routing | ocr/routing/page_router.py | native/OCR decisions, region hints, reading-order reconstruction | inventing text or unsupported classification |
 | OCR adapters | ocr/models.py, ocr/backends/ | provider invocation, response parsing, backend/model/version/confidence scale | cross-backend score calibration and final review decisions |
-| Handwriting | handwriting/ports.py and future adapters | HTR invocation and typed result conversion | changing raw text or hiding uncertainty |
+| Handwriting | handwriting/ports.py and transformers.py | HTR invocation and typed result conversion | changing raw text or hiding uncertainty |
 | Tables/forms | tables/ports.py and future adapters | cell/field geometry and extraction metadata | generic OCR policy or persistence |
 | Normalization | normalization/persian.py | configurable raw-to-normalized transformation | overwriting raw evidence or UI bidi reordering |
 | Verification | ocr/verification/comparison.py, scoring.py, retry.py, engine.py | Unicode-aware comparison, backend-specific scoring, bounded escalation, status, reason codes, flags, attempt history | silent repair, LLM correction, or cross-scale comparison |
@@ -245,6 +245,17 @@ class HandwritingBackend(Protocol):
 ~~~
 
 HTR output uses the same geometry/provenance shape as OCR but must report ExtractionMethod.HANDWRITING_RECOGNITION and an explicit handwritten or mixed text type when supported.
+
+The current optional `TransformersHandwritingBackend` is a lazy
+vision-encoder/decoder adapter selected through `OCR_HANDWRITING_BACKEND`.
+Model ID, processor ID, revision, device, cache, local-files-only behavior,
+generation length, and cooperative generation timeout are configuration
+inputs. It reports `uncalibrated_none` confidence and does not infer a model's
+language capability from generated characters. `und`/`Unknown` remain the
+safe defaults until a configured model is validated for a language/script with
+permitted benchmark data. A missing runtime or model is an explicit typed
+capability failure; the optional printed-OCR fallback is separately labeled
+and always review-required.
 
 ### Tables and structured regions
 
@@ -524,10 +535,12 @@ classification while preserving the existing native-first behavior.
 
 Region execution is now selected by `RegionRouter` from stable block, text,
 and layout hints. Printed regions use configured `OcrBackend` adapters;
-handwriting regions use only `HandwritingBackend`; table regions use only
-`TableBackend`; forms and explicitly mixed regions can invoke printed OCR and
-HTR independently. Missing HTR/table capability is surfaced as a typed warning
-and review-required evidence rather than a printed-text fallback.
+handwriting regions use `HandwritingBackend` and may use the explicitly
+configured printed-OCR fallback; table regions use only `TableBackend`; forms
+and explicitly mixed regions can invoke printed OCR and HTR independently.
+Missing HTR/table capability is surfaced as a typed warning and
+review-required evidence. HTR fallback text retains `ExtractionMethod.OCR`, a
+`route_fallback` runtime field, and never masquerades as handwriting output.
 
 `OcrResult` and `TableResult` retain runtime metadata and warnings. The
 pipeline copies that evidence into `ExtractionMetadata`, maps all provider

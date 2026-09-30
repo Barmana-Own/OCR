@@ -23,7 +23,7 @@ Version 0.1.0 is an API-first modular monolith with synchronous compatibility pr
 - asynchronous document submission with fast/balanced/accurate processing modes, durable local job metadata, bounded worker execution, progress polling, idempotent resubmission, protected page images, manifests, and policy-aware exports.
 - authenticated metrics and capability-aware liveness/readiness endpoints, bounded model lifecycle/concurrency settings, stage tracing hooks, page-level failure recovery, and DPI/memory/artifact profiling.
 - native Office/text readers for DOCX, XLSX, PPTX, optional legacy XLS, TXT, CSV, JSON, and HTML; Office container detection is signature/member based;
-- optional Paddle printed OCR, PP-Structure table cells, local Transformers HTR, PostgreSQL/S3-compatible metadata/artifacts, and Redis worker dispatch adapters;
+- optional Paddle printed OCR, PP-Structure table cells, configurable Transformers HTR, PostgreSQL/S3-compatible metadata/artifacts, and Redis worker dispatch adapters;
 - schema-driven semantic extraction with source evidence links and append-only human correction revisions;
 - real-pipeline benchmark execution mode that rejects synthetic-only ground truth when external evaluation is required;
 - enforced processing deadlines and an opt-in distributed worker Compose profile.
@@ -121,7 +121,7 @@ Persistence is intentionally port-based in 0.1.0. The local artifact store is im
 - Static service API keys require a secrets manager, gateway rate limiting, rotation, and audit integration before public production exposure.
 - The default worker executor is bounded and non-blocking for HTTP, but it is single-process; multi-instance deployments require a shared metadata database, object store, queue, worker recovery, and rate limiting.
 - The default layout detector is a conservative Pillow projection fallback: it can infer visual lines, columns, basic header/footer/page-number bands, and simple grid-like table regions, but it cannot reliably identify handwriting, formulas, form fields, or table cells without a deployed model adapter. Table/HTR execution is nevertheless routed through explicit ports and fails closed when unavailable.
-- A production deployment must install and license the selected OCR/layout/HTR models separately; optional PaddleOCR PP-Structure integration is explicit and fails closed when unavailable.
+- A production deployment must install and license the selected OCR/layout/HTR models separately; optional PaddleOCR PP-Structure and Transformers HTR integrations are explicit and fail closed when unavailable. HTR language support is never inferred from the model name; configure and benchmark it before claiming Persian or Arabic handwriting support.
 - The default local worker is intentionally single-process. Use the shared Redis/PostgreSQL/S3 adapters and restart-recovery worker process before multi-instance public deployment. The container configuration does not include model weights or external service credentials.
 
 

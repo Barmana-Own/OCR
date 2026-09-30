@@ -65,7 +65,7 @@ remain deployment-specific ports.
 | 6. Preprocessing | Produce bounded, named variants and crop/scale tiny regions | imaging/profiles.py, operations.py, service.py, preprocess.py, geometry.py | Immutable per-step artifacts, transformation metadata, profile, warnings, and mapping to rendered/page coordinates | Reject invalid crop, empty region, oversized output, unsupported profile/operation, or immutable path collision |
 | 7. Layout detection | Detect provider-neutral regions, lines, geometry, confidence, and order | layout/service.py, layout/normalization.py, layout/reading_order.py over `LayoutBackend` | Ordered `LayoutResult` with regions, line hints, direction, columns, and warnings | Invalid geometry is rejected per region; unavailable providers remain typed warnings/errors |
 | 8. Region classification | Map provider labels into title/paragraph/header/footer/page-number/table/formula/form/image/handwriting/sidebar/list/multi-column/tiny-text/unknown and route hints | layout/classification.py, domain enums, heuristic.py, providers.py | `LayoutRegion` and OCR `OcrRegion` metadata | Unknown, low-confidence, or unsupported classes remain reviewable; no silent rich-class default |
-| 9. OCR/HTR/table routing | Select a capability-specific adapter for each layout region and execute it on a bounded crop/variant | ocr/routing/region_router.py, ocr/backends/, handwriting/, tables/, pipeline.py | OcrResult or structured TableResult with backend/model/version, confidence scale, runtime metadata, warnings, geometry, and candidates | Handwriting/table capability never silently falls back to printed OCR; unavailable or failed adapters create explicit review evidence |
+| 9. OCR/HTR/table routing | Select a capability-specific adapter for each layout region and execute it on a bounded crop/variant | ocr/routing/region_router.py, ocr/backends/, handwriting/, tables/, pipeline.py | OcrResult or structured TableResult with backend/model/version, confidence scale, runtime metadata, warnings, geometry, and candidates | Handwriting/table capability never silently falls back to printed OCR; only an explicitly configured fallback may preserve text, and it remains review-required |
 | 10. Reading-order reconstruction | Sort blocks and lines spatially in document order | layout/reading_order.py, layout/service.py, ocr/routing/page_router.py, pipeline block assembly | Non-negative block/line `reading_order`; RTL horizontal order without string reversal | Ambiguous order stays in evidence and can trigger review; no character mutation |
 | 11. Normalization | Create a comparison/search form while preserving returned text | normalization/persian.py, normalize_text | raw_text untouched; normalized_text plus versioned policy and configuration hash | Invalid normalization policy is a configuration error, not silent fallback |
 | 12. Verification/retry | Assess confidence, compare attempts, retry bounded variants/backends, and persist history | pipeline.py _recognize_region, ocr/verification/engine.py | AttemptCandidate, VerificationOutcome, VerificationAttempt, flags | Low confidence/disagreement/tiny text/scale mismatch becomes review-required |
@@ -110,7 +110,7 @@ The stable taxonomy supports title, paragraph, text_line_group, printed_text, ha
 - reliable native text becomes printed text;
 - embedded PDF image regions become image OCR regions;
 - OCR-required full pages become printed_text or tiny_text based on available signals;
-- handwriting-only claims route only to HTR; table claims route only to the table adapter; forms/mixed regions may run printed OCR and HTR independently; unsupported capability remains reviewable and never becomes a fabricated printed result.
+- handwriting-only claims route only to HTR by default; an explicit printed-OCR fallback may preserve visible text while remaining review-required; table claims route only to the table adapter; forms/mixed regions may run printed OCR and HTR independently; unsupported capability remains reviewable and never becomes a fabricated handwriting result.
 
 This prevents an unconfigured model from silently producing a false structural label.
 
@@ -344,7 +344,8 @@ confidence scales, runtime metadata, warnings, verification attempts, and
 source-derived line crop references. Table regions remain structured through
 `TableResult` and `BlockResult.table_cells`; cells retain row/column indexes
 and are not flattened into canonical text. Missing HTR/table runtimes produce
-review-required warnings and no fake output.
+review-required warnings; any explicit printed fallback is marked as OCR
+fallback evidence and never treated as HTR output.
 
 ## Phase 7 implementation update
 

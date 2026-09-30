@@ -15,9 +15,14 @@ class UnavailableHandwritingBackend:
     model = "none"
     model_version = "none"
     confidence_scale = "none"
+    available = False
 
     def __init__(self, reason: str = "no handwriting backend configured") -> None:
         self.reason = reason
+
+    @property
+    def unavailable_reason(self) -> str:
+        return self.reason
 
     def recognize(
         self,
@@ -34,18 +39,43 @@ class UnavailableHandwritingBackend:
 def build_handwriting_backend(
     name: str,
     *,
+    model_id: str | None = None,
+    processor_id: str | None = None,
+    revision: str | None = None,
     model_path: str | None = None,
     device: str = "auto",
+    local_files_only: bool = True,
+    trust_remote_code: bool = False,
+    max_generation_length: int = 256,
+    cache_dir: str | None = None,
+    language: str = "und",
+    script: str = "Unknown",
+    max_image_pixels: int = 12_000_000,
+    timeout_seconds: int = 120,
 ) -> HandwritingBackend:
-    """Return an explicit unavailable adapter until a real HTR adapter is installed."""
+    """Build a configured HTR adapter or an explicit unavailable capability."""
 
     normalized = name.strip().lower()
     if normalized in {"", "unavailable", "none"}:
         return UnavailableHandwritingBackend("handwriting recognition backend is not configured")
-    if normalized in {"transformers", "transformers_htr", "htr"}:
+    if normalized in {"transformers", "transformers_htr", "transformers-htr", "trocr", "htr"}:
         from .transformers import TransformersHandwritingBackend
 
-        return TransformersHandwritingBackend(model_path=model_path, device=device)
+        return TransformersHandwritingBackend(
+            model_id=model_id,
+            processor_id=processor_id,
+            revision=revision,
+            model_path=model_path,
+            device=device,
+            local_files_only=local_files_only,
+            trust_remote_code=trust_remote_code,
+            max_generation_length=max_generation_length,
+            cache_dir=cache_dir,
+            language=language,
+            script=script,
+            max_image_pixels=max_image_pixels,
+            timeout_seconds=timeout_seconds,
+        )
     return UnavailableHandwritingBackend(
         f"handwriting backend '{name}' is not available in this runtime"
     )

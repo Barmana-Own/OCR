@@ -79,6 +79,15 @@ DEFAULT_LAYOUT_MAX_REGIONS = 512
 DEFAULT_LAYOUT_MIN_CONFIDENCE = 0.35
 DEFAULT_HANDWRITING_BACKEND = "unavailable"
 DEFAULT_HANDWRITING_MODEL_PATH = Path("var/models/htr")
+DEFAULT_HANDWRITING_MODEL_ID: str | None = None
+DEFAULT_HANDWRITING_PROCESSOR_ID: str | None = None
+DEFAULT_HANDWRITING_REVISION: str | None = None
+DEFAULT_HANDWRITING_LOCAL_FILES_ONLY = True
+DEFAULT_HANDWRITING_TRUST_REMOTE_CODE = False
+DEFAULT_HANDWRITING_MAX_GENERATION_LENGTH = 256
+DEFAULT_HANDWRITING_LANGUAGE = "und"
+DEFAULT_HANDWRITING_SCRIPT = "Unknown"
+DEFAULT_HANDWRITING_FALLBACK_TO_PRINTED = False
 DEFAULT_TABLE_BACKEND = "unavailable"
 DEFAULT_TEXT_CONTENT_TYPES = (
     "text/plain",
@@ -146,6 +155,14 @@ def _env_csv(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
     if value is None:
         return default
     return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
+def _env_optional(name: str, default: str | None = None) -> str | None:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    cleaned = value.strip()
+    return cleaned or None
 
 
 def _env_int_tuple(name: str, default: tuple[int, ...]) -> tuple[int, ...]:
@@ -382,6 +399,15 @@ class Settings:
     layout_min_confidence: float = DEFAULT_LAYOUT_MIN_CONFIDENCE
     handwriting_backend: str = DEFAULT_HANDWRITING_BACKEND
     handwriting_model_path: Path = DEFAULT_HANDWRITING_MODEL_PATH
+    handwriting_model_id: str | None = DEFAULT_HANDWRITING_MODEL_ID
+    handwriting_processor_id: str | None = DEFAULT_HANDWRITING_PROCESSOR_ID
+    handwriting_revision: str | None = DEFAULT_HANDWRITING_REVISION
+    handwriting_local_files_only: bool = DEFAULT_HANDWRITING_LOCAL_FILES_ONLY
+    handwriting_trust_remote_code: bool = DEFAULT_HANDWRITING_TRUST_REMOTE_CODE
+    handwriting_max_generation_length: int = DEFAULT_HANDWRITING_MAX_GENERATION_LENGTH
+    handwriting_language: str = DEFAULT_HANDWRITING_LANGUAGE
+    handwriting_script: str = DEFAULT_HANDWRITING_SCRIPT
+    handwriting_fallback_to_printed: bool = DEFAULT_HANDWRITING_FALLBACK_TO_PRINTED
     table_backend: str = DEFAULT_TABLE_BACKEND
     require_auth: bool = False
     allow_sensitive_debug_logging: bool = False
@@ -423,6 +449,25 @@ class Settings:
             raise ConfigurationError("processing timeout must be positive")
         if self.ocr_backend_timeout_seconds <= 0:
             raise ConfigurationError("OCR backend timeout must be positive")
+        if not 1 <= self.handwriting_max_generation_length <= 4096:
+            raise ConfigurationError("HTR generation length must be between 1 and 4096")
+        if not self.handwriting_language or not re.fullmatch(
+            r"[A-Za-z0-9+_-]{2,32}", self.handwriting_language
+        ):
+            raise ConfigurationError("HTR language must be safe and non-empty")
+        if not self.handwriting_script or not re.fullmatch(
+            r"[A-Za-z0-9+_-]{2,64}", self.handwriting_script
+        ):
+            raise ConfigurationError("HTR script must be safe and non-empty")
+        for value, label in (
+            (self.handwriting_model_id, "HTR model ID"),
+            (self.handwriting_processor_id, "HTR processor ID"),
+            (self.handwriting_revision, "HTR model revision"),
+        ):
+            if value is not None and (
+                not value.strip() or len(value) > 512 or re.search(r"[\x00-\x1f]", value)
+            ):
+                raise ConfigurationError(f"{label} must be safe and non-empty")
         if not self.ocr_languages or any(
             not re.fullmatch(r"[A-Za-z0-9_-]{2,32}", language)
             for language in self.ocr_languages
@@ -653,6 +698,15 @@ class Settings:
             "layout_min_confidence": self.layout_min_confidence,
             "handwriting_backend": self.handwriting_backend,
             "handwriting_model_path": str(self.handwriting_model_path),
+            "handwriting_model_id": self.handwriting_model_id,
+            "handwriting_processor_id": self.handwriting_processor_id,
+            "handwriting_revision": self.handwriting_revision,
+            "handwriting_local_files_only": self.handwriting_local_files_only,
+            "handwriting_trust_remote_code": self.handwriting_trust_remote_code,
+            "handwriting_max_generation_length": self.handwriting_max_generation_length,
+            "handwriting_language": self.handwriting_language,
+            "handwriting_script": self.handwriting_script,
+            "handwriting_fallback_to_printed": self.handwriting_fallback_to_printed,
             "table_backend": self.table_backend,
             "require_auth": self.require_auth,
             "allow_sensitive_debug_logging": self.allow_sensitive_debug_logging,
@@ -822,6 +876,34 @@ class Settings:
             ).strip(),
             handwriting_model_path=Path(
                 os.getenv("OCR_HANDWRITING_MODEL_PATH", str(DEFAULT_HANDWRITING_MODEL_PATH))
+            ),
+            handwriting_model_id=_env_optional(
+                "OCR_HANDWRITING_MODEL_ID", DEFAULT_HANDWRITING_MODEL_ID
+            ),
+            handwriting_processor_id=_env_optional(
+                "OCR_HANDWRITING_PROCESSOR_ID", DEFAULT_HANDWRITING_PROCESSOR_ID
+            ),
+            handwriting_revision=_env_optional(
+                "OCR_HANDWRITING_REVISION", DEFAULT_HANDWRITING_REVISION
+            ),
+            handwriting_local_files_only=_env_bool(
+                "OCR_HANDWRITING_LOCAL_FILES_ONLY", DEFAULT_HANDWRITING_LOCAL_FILES_ONLY
+            ),
+            handwriting_trust_remote_code=_env_bool(
+                "OCR_HANDWRITING_TRUST_REMOTE_CODE", DEFAULT_HANDWRITING_TRUST_REMOTE_CODE
+            ),
+            handwriting_max_generation_length=_env_int(
+                "OCR_HANDWRITING_MAX_GENERATION_LENGTH",
+                DEFAULT_HANDWRITING_MAX_GENERATION_LENGTH,
+            ),
+            handwriting_language=os.getenv(
+                "OCR_HANDWRITING_LANGUAGE", DEFAULT_HANDWRITING_LANGUAGE
+            ).strip(),
+            handwriting_script=os.getenv(
+                "OCR_HANDWRITING_SCRIPT", DEFAULT_HANDWRITING_SCRIPT
+            ).strip(),
+            handwriting_fallback_to_printed=_env_bool(
+                "OCR_HANDWRITING_FALLBACK_TO_PRINTED", DEFAULT_HANDWRITING_FALLBACK_TO_PRINTED
             ),
             table_backend=os.getenv("OCR_TABLE_BACKEND", DEFAULT_TABLE_BACKEND).strip(),
             require_auth=_env_bool("OCR_REQUIRE_AUTH", require_auth_default),

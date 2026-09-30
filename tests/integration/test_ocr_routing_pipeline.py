@@ -3,6 +3,7 @@ from pathlib import Path
 from PIL import Image
 
 from ocr_platform.config import Settings
+from ocr_platform.dataset import DatasetExporter, DatasetExportPolicy
 from ocr_platform.domain import (
     BlockType,
     CoordinateSpace,
@@ -102,6 +103,40 @@ class HandwritingBackend:
                     confidence=0.96,
                     language="fa",
                     script="Arabic",
+                    text_type=TextType.HANDWRITTEN,
+                ),
+            ),
+        )
+
+
+class UnicodeHandwritingBackend(HandwritingBackend):
+    name = "unicode-handwriting-test"
+
+    def recognize(
+        self,
+        image_bytes: bytes,
+        *,
+        region: OcrRegion,
+        dpi: int,
+        region_scale: int,
+        preprocess_variant: str,
+    ) -> OcrResult:
+        return OcrResult(
+            backend=self.name,
+            model=self.model,
+            model_version=self.model_version,
+            method=ExtractionMethod.HANDWRITING_RECOGNITION,
+            confidence_scale=self.confidence_scale,
+            dpi=float(dpi),
+            region_scale=float(region_scale),
+            preprocess_variant=preprocess_variant,
+            lines=(
+                BackendTextLine(
+                    raw_text="شماره ١٢٣ ABC@example.com",
+                    bbox=(5.0, 5.0, 110.0, 25.0),
+                    confidence=0.96,
+                    language="fa+en",
+                    script="Arabic+Latin",
                     text_type=TextType.HANDWRITTEN,
                 ),
             ),
@@ -223,6 +258,13 @@ class FailingPrintedBackend(PrintedBackend):
         raise ProcessingError("test backend timed out", retryable=True)
 
 
+class FailingHandwritingBackend(HandwritingBackend):
+    name = "failing-handwriting-test"
+
+    def recognize(self, *args, **kwargs) -> OcrResult:
+        raise ProcessingError("test HTR backend failed", retryable=True)
+
+
 def _layout_regions() -> tuple[LayoutRegion, ...]:
     return (
         LayoutRegion(
@@ -318,6 +360,127 @@ def test_handwriting_region_does_not_fall_back_to_printed_ocr(tmp_path: Path) ->
     assert block.needs_review is True
     assert any("handwriting" in warning for warning in document.warnings)
     assert all(line.extraction.method != ExtractionMethod.OCR for line in block.lines)
+
+
+def test_handwriting_region_can_use_explicit_printed_fallback_with_review(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "handwriting-fallback.png"
+    Image.new("RGB", (120, 80), "white").save(source_path, format="PNG")
+    settings = Settings(
+        environment="test",
+        storage_root=tmp_path / "artifacts",
+        max_retries=0,
+        handwriting_fallback_to_printed=True,
+    )
+    document = DocumentPipeline(
+        settings,
+        backends=(PrintedBackend(),),
+        layout_service=FixedLayoutService(
+            (
+                LayoutRegion(
+                    bbox=(0.0, 0.0, 120.0, 80.0),
+                    block_type=BlockType.HANDWRITING,
+                    confidence=0.9,
+                    reading_order=0,
+                    route_hint=RegionRouteHint.HANDWRITING,
+                    text_type=TextType.HANDWRITTEN,
+                ),
+            )
+        ),
+    ).process_path(
+        source_path,
+        filename="handwriting-fallback.png",
+        declared_content_type="image/png",
+    )
+
+    block = document.pages[0].blocks[0]
+    assert block.lines[0].raw_text == "شماره ABC123"
+    assert block.lines[0].extraction.method == ExtractionMethod.OCR
+    assert block.lines[0].needs_review is True
+    assert ReviewFlag.CAPABILITY_UNAVAILABLE in block.uncertainty_flags
+    assert "printed_ocr_fallback_for_handwriting" in block.lines[0].extraction.warnings
+    assert any("fallback" in warning for warning in document.warnings)
+
+
+def test_htr_backend_failure_uses_explicit_fallback_and_review(tmp_path: Path) -> None:
+    source_path = tmp_path / "handwriting-failure-fallback.png"
+    Image.new("RGB", (120, 80), "white").save(source_path, format="PNG")
+    settings = Settings(
+        environment="test",
+        storage_root=tmp_path / "artifacts",
+        max_retries=0,
+        handwriting_fallback_to_printed=True,
+    )
+    document = DocumentPipeline(
+        settings,
+        backends=(PrintedBackend(),),
+        handwriting_backends=(FailingHandwritingBackend(),),
+        layout_service=FixedLayoutService(
+            (
+                LayoutRegion(
+                    bbox=(0.0, 0.0, 120.0, 80.0),
+                    block_type=BlockType.HANDWRITING,
+                    confidence=0.9,
+                    reading_order=0,
+                    route_hint=RegionRouteHint.HANDWRITING,
+                    text_type=TextType.HANDWRITTEN,
+                ),
+            )
+        ),
+    ).process_path(
+        source_path,
+        filename="handwriting-failure-fallback.png",
+        declared_content_type="image/png",
+    )
+
+    block = document.pages[0].blocks[0]
+    assert block.lines[0].raw_text == "شماره ABC123"
+    assert block.lines[0].needs_review is True
+    assert ReviewFlag.CAPABILITY_UNAVAILABLE in block.uncertainty_flags
+    assert any("test HTR backend failed" in warning for warning in document.warnings)
+
+
+def test_htr_unicode_raw_text_and_normalized_export_are_separate(tmp_path: Path) -> None:
+    source_path = tmp_path / "unicode-handwriting.png"
+    Image.new("RGB", (120, 80), "white").save(source_path, format="PNG")
+    settings = Settings(environment="test", storage_root=tmp_path / "artifacts", max_retries=0)
+    document = DocumentPipeline(
+        settings,
+        backends=(PrintedBackend(),),
+        handwriting_backends=(UnicodeHandwritingBackend(),),
+        layout_service=FixedLayoutService(
+            (
+                LayoutRegion(
+                    bbox=(0.0, 0.0, 120.0, 80.0),
+                    block_type=BlockType.HANDWRITING,
+                    confidence=0.9,
+                    reading_order=0,
+                    route_hint=RegionRouteHint.HANDWRITING,
+                    text_type=TextType.HANDWRITTEN,
+                ),
+            )
+        ),
+    ).process_path(
+        source_path,
+        filename="unicode-handwriting.png",
+        declared_content_type="image/png",
+    )
+
+    line = document.pages[0].blocks[0].lines[0]
+    assert line.raw_text == "شماره ١٢٣ ABC@example.com"
+    assert line.normalized_text == "شماره ۱۲۳ ABC@example.com"
+
+    exported = DatasetExporter(DocumentPipeline(settings, backends=()).store).export(
+        document,
+        tmp_path / "exports",
+        policy=DatasetExportPolicy.ALL_WITH_STATUS,
+    )
+    canonical = (exported.root / "document.json").read_text(encoding="utf-8")
+    text_export = (exported.root / "document.txt").read_text(encoding="utf-8")
+    assert "شماره ١٢٣ ABC@example.com" in canonical
+    assert "شماره ۱۲۳ ABC@example.com" in canonical
+    assert "شماره ١٢٣ ABC@example.com" in text_export
 
 
 def test_table_backend_unavailable_preserves_text_with_review_flags(tmp_path: Path) -> None:

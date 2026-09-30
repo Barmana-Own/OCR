@@ -13,7 +13,7 @@ history.
 | Capability | Contract | Current runtime behavior |
 |---|---|---|
 | Printed OCR | `ocr.models.OcrBackend` | `TesseractBackend` is a real external CLI adapter. Language selection is configured through `OCR_LANGUAGES` and defaults to `fas+eng` in the settings-backed pipeline factory. |
-| Handwriting | `handwriting.ports.HandwritingBackend` | `UnavailableHandwritingBackend` fails explicitly when no acceptable HTR model is installed. A handwriting region never falls back to printed OCR. |
+| Handwriting | `handwriting.ports.HandwritingBackend` | `TransformersHandwritingBackend` is an optional, model-configurable TrOCR-style adapter. `UnavailableHandwritingBackend` remains the explicit fail-closed capability when no validated runtime/model is provisioned. |
 | Tables | `tables.ports.TableBackend` | `PaddleStructureTableBackend` is an optional PP-Structure adapter selected by `paddle`, `paddle-table`, `ppstructure`, or equivalent aliases. `TableResult` preserves structured cells, coordinates, row/column indexes, confidence, runtime metadata, warnings, review flags, and raw cell candidates. The default unavailable adapter fails closed. |
 | Region routing | `ocr.routing.RegionRouter` | Stable block/text/layout hints select printed, handwriting, table, or both printed+HTR routes for mixed forms. |
 
@@ -70,8 +70,12 @@ ordering; missing geometry never receives a fabricated address.
 - A form or explicit mixed region selects both printed OCR and HTR. If HTR is
   unavailable, printed evidence is retained and the block/document is marked
   for review with a capability warning.
-- A handwriting-only region selects only HTR. No printed OCR result can be
-  produced for it by fallback.
+- A handwriting-only region selects only HTR. By default, no printed OCR
+  result is produced for it. Setting `OCR_HANDWRITING_FALLBACK_TO_PRINTED=true`
+  enables an explicit, review-required printed-OCR fallback for recoverable
+  visible text. The fallback remains `ExtractionMethod.OCR`, carries a
+  `route_fallback=printed_ocr_for_handwriting` runtime field, and is never
+  represented as handwriting recognition.
 - A table region first selects the configured table adapter. When the adapter
   is unavailable, fails, times out, returns no cells, or returns unusable
   structure, the pipeline routes the same region through printed OCR. The OCR
@@ -99,13 +103,25 @@ The following settings are validated and included in the configuration hash:
 - `OCR_LANGUAGES`
 - `OCR_BACKEND_TIMEOUT_SECONDS`
 - `OCR_HANDWRITING_BACKEND`
+- `OCR_HANDWRITING_MODEL_ID` and optional `OCR_HANDWRITING_PROCESSOR_ID`
+- `OCR_HANDWRITING_REVISION`
+- `OCR_HANDWRITING_LOCAL_FILES_ONLY` (true by default)
+- `OCR_HANDWRITING_TRUST_REMOTE_CODE` (false by default)
+- `OCR_HANDWRITING_MAX_GENERATION_LENGTH`
+- `OCR_HANDWRITING_LANGUAGE` and `OCR_HANDWRITING_SCRIPT`
+- `OCR_HANDWRITING_FALLBACK_TO_PRINTED`
 - `OCR_TABLE_BACKEND`
 - confidence/retry/DPI and crop limits from earlier phases
 
-The optional PP-Structure runtime is installed with `pip install
+The optional HTR runtime is installed with `pip install
+ocr-platform[htr]`; it includes Torch, Transformers, and SentencePiece. The
+optional PP-Structure runtime is installed with `pip install
 ocr-platform[paddle]`. The base installation remains importable without
-PaddleOCR or model weights; a configured but unavailable table backend produces
-an explicit capability warning and activates printed-OCR fallback.
+these packages or model weights. HTR model IDs, language claims, revisions,
+and licensing are deployment configuration, not domain defaults. A Persian or
+Arabic handwriting claim is valid only after a selected model has been
+validated for that script with an external benchmark; the default language is
+`und` and confidence is explicitly uncalibrated/absent.
 
 The default environment does not claim that Tesseract, Persian traineddata,
 HTR weights, or table models are installed. Model smoke validation remains a
@@ -132,6 +148,8 @@ the target deployment environment.
    the HTR unavailable adapter and optional PP-Structure boundary are
    intentional capability boundaries, not fake recognition. Printed OCR remains
    the safe text fallback for table regions when a table model is unavailable.
+   The Transformers adapter is contract-tested with mocked model modules, while
+   actual model loading and handwriting quality remain deployment-dependent.
 2. The Tesseract adapter is real but model/`fas` traineddata availability and
    recognition quality require deployment validation with labeled Persian,
    English, and mixed-script fixtures.
