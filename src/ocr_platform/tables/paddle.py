@@ -3,6 +3,9 @@
 Only provider-produced table cells are emitted. If the runtime returns a table
 without cell geometry, the result keeps an explicit warning and no invented
 cells; the pipeline can preserve normal OCR text through its fallback path.
+When row/column indexes are absent, the adapter derives zero-based addresses
+only from valid provider cell boxes using deterministic row-center grouping and
+left-to-right ordering.
 """
 
 from __future__ import annotations
@@ -13,10 +16,12 @@ from collections.abc import Iterable, Mapping, Sequence
 from importlib.util import find_spec
 from typing import Any
 
+from ocr_platform.domain import PolygonPoint
 from ocr_platform.errors import BackendUnavailableError, ProcessingError
 from ocr_platform.ocr.models import OcrRegion
 
 from .ports import TableCell, TableResult
+from .validation import validate_table_cells
 
 
 class PaddleStructureTableBackend:
@@ -53,6 +58,9 @@ class PaddleStructureTableBackend:
         try:
             raw = _invoke_structure_engine(engine, image_bytes)
             cells, warnings = _parse_structure_result(raw)
+            validation = validate_table_cells(cells, region_bbox=region.bbox)
+            cells = list(validation.cells)
+            warnings.extend(validation.warnings)
         except BackendUnavailableError:
             raise
         except Exception as exc:
@@ -67,6 +75,7 @@ class PaddleStructureTableBackend:
             cells=tuple(cells),
             runtime_metadata=(("language", self.language), ("device", self.device)),
             warnings=tuple(warnings),
+            review_flags=validation.review_flags,
             backend_family=self.backend_family,
         )
 
@@ -125,10 +134,11 @@ def _parse_structure_result(raw: Any) -> tuple[list[TableCell], list[str]]:
             warnings.append(f"table_{table_index}: cell geometry was not returned")
             continue
         for cell_index, box in enumerate(boxes):
-            parsed_box = _bbox(box)
-            if parsed_box is None:
+            geometry = _geometry(box)
+            if geometry is None:
                 warnings.append(f"table_{table_index}: invalid cell geometry at index {cell_index}")
                 continue
+            parsed_box, polygon = geometry
             text, confidence = _recognition_at(recognition, cell_index)
             if text is None:
                 warnings.append(f"table_{table_index}: cell text missing at index {cell_index}")
@@ -142,6 +152,7 @@ def _parse_structure_result(raw: Any) -> tuple[list[TableCell], list[str]]:
                     raw_text=text,
                     bbox=parsed_box,
                     confidence=confidence,
+                    polygon=polygon,
                 )
             )
     if not cells and not warnings:
@@ -197,20 +208,41 @@ def _structure_records(raw: Any) -> list[Any] | None:
 
 
 def _bbox(value: Any) -> tuple[float, float, float, float] | None:
+    geometry = _geometry(value)
+    return geometry[0] if geometry is not None else None
+
+
+def _geometry(
+    value: Any,
+) -> tuple[tuple[float, float, float, float], tuple[PolygonPoint, ...] | None] | None:
     try:
-        if len(value) == 4 and not isinstance(value[0], Sequence):
-            x0, y0, x1, y1 = (float(item) for item in value)
+        values = list(value)
+        if len(values) == 4 and all(not _is_point(item) for item in values):
+            x0, y0, x1, y1 = (float(item) for item in values)
+            polygon = None
         else:
-            points = [(float(item[0]), float(item[1])) for item in value]
+            points = [(float(item[0]), float(item[1])) for item in values]
+            if len(points) < 3:
+                return None
             x0 = min(point[0] for point in points)
             y0 = min(point[1] for point in points)
             x1 = max(point[0] for point in points)
             y1 = max(point[1] for point in points)
+            polygon = tuple(PolygonPoint(x=point[0], y=point[1]) for point in points)
         if x1 <= x0 or y1 <= y0 or min(x0, y0) < 0:
             return None
-        return x0, y0, x1, y1
+        return (x0, y0, x1, y1), polygon
     except (TypeError, ValueError, IndexError):
         return None
+
+
+def _is_point(value: Any) -> bool:
+    if isinstance(value, (str, bytes, bytearray)):
+        return False
+    try:
+        return len(value) >= 2
+    except (TypeError, ValueError):
+        return False
 
 
 def _recognition_at(records: Any, index: int) -> tuple[str | None, float | None]:
@@ -285,4 +317,6 @@ def _row_column(
     return row, column
 
 
-__all__ = ["PaddleStructureTableBackend"]
+PaddleTableBackend = PaddleStructureTableBackend
+
+__all__ = ["PaddleStructureTableBackend", "PaddleTableBackend"]

@@ -75,7 +75,12 @@ from ocr_platform.storage import (
     sha256_bytes,
     sha256_file,
 )
-from ocr_platform.tables import TableBackend, TableResult, build_table_backend
+from ocr_platform.tables import (
+    TableBackend,
+    TableResult,
+    build_table_backend,
+    validate_table_cells,
+)
 from ocr_platform.utils import stable_hash
 
 _PERSIAN_RE = re.compile(r"[\u0600-\u06ff]")
@@ -541,7 +546,7 @@ class DocumentPipeline:
         for region in rendered_regions:
             route = self.region_router.route(region)
             if route.requires_table:
-                table_result, region_warnings = self._extract_table_region(
+                table_result, region_warnings, table_failure_flags = self._extract_table_region(
                     image_bytes,
                     rendered_page,
                     region,
@@ -568,10 +573,13 @@ class DocumentPipeline:
                             image_bytes=image_bytes,
                             rendered_page=rendered_page,
                             force_review=True,
-                            extra_flags=(
-                                ReviewFlag.MISSING_BACKEND,
-                                ReviewFlag.CAPABILITY_UNAVAILABLE,
-                                ReviewFlag.TABLE_STRUCTURE_UNCERTAIN,
+                            extra_flags=tuple(
+                                dict.fromkeys(
+                                    (
+                                        *table_failure_flags,
+                                        ReviewFlag.TABLE_STRUCTURE_UNCERTAIN,
+                                    )
+                                )
                             ),
                         )
                         blocks.append(fallback_block)
@@ -583,10 +591,13 @@ class DocumentPipeline:
                                 page_input,
                                 region,
                                 render_artifact.uri,
-                                flags=(
-                                    ReviewFlag.MISSING_BACKEND,
-                                    ReviewFlag.CAPABILITY_UNAVAILABLE,
-                                    ReviewFlag.TABLE_STRUCTURE_UNCERTAIN,
+                                flags=tuple(
+                                    dict.fromkeys(
+                                        (
+                                            *table_failure_flags,
+                                            ReviewFlag.TABLE_STRUCTURE_UNCERTAIN,
+                                        )
+                                    )
                                 ),
                             )
                         )
@@ -819,8 +830,9 @@ class DocumentPipeline:
         image_bytes: bytes,
         rendered_page: RenderedPage,
         region: OcrRegion,
-    ) -> tuple[TableResult | None, list[str]]:
+    ) -> tuple[TableResult | None, list[str], tuple[ReviewFlag, ...]]:
         warnings: list[str] = []
+        table_variant = self._table_preprocess_variant(region)
         try:
             with trace_span("preprocessing", metrics=self.metrics):
                 prepared = prepare_image(
@@ -828,7 +840,7 @@ class DocumentPipeline:
                     region_bbox=region.bbox,
                     page_width=rendered_page.width,
                     page_height=rendered_page.height,
-                    variant="source-render",
+                    variant=table_variant,
                     max_crop_pixels=self.settings.max_crop_pixels,
                     max_region_scale=self.settings.max_region_scale,
                 )
@@ -855,6 +867,27 @@ class DocumentPipeline:
                     cells=tuple(raw_result),
                 )
             )
+            validation = validate_table_cells(
+                result.cells,
+                region_bbox=backend_region.bbox,
+            )
+            result = replace(
+                result,
+                cells=validation.cells,
+                warnings=tuple((*result.warnings, *validation.warnings)),
+                review_flags=tuple(
+                    dict.fromkeys((*result.review_flags, *validation.review_flags))
+                ),
+            )
+            warnings.extend(f"{result.backend}: {warning}" for warning in result.warnings)
+            if not validation.usable:
+                warnings.append(f"{result.backend}: table structure unusable; fallback required")
+                flags = tuple(
+                    dict.fromkeys(
+                        (*validation.review_flags, ReviewFlag.TABLE_STRUCTURE_UNCERTAIN)
+                    )
+                )
+                return None, warnings, flags
             mapped_cells = tuple(
                 replace(
                     cell,
@@ -868,15 +901,55 @@ class DocumentPipeline:
                 cells=mapped_cells,
                 dpi=float(rendered_page.dpi),
                 region_scale=float(prepared.scale),
-                preprocess_variant="source-render",
+                preprocess_variant=table_variant,
             )
-            warnings.extend(f"{result.backend}: {warning}" for warning in result.warnings)
-            return result, warnings
+            return result, warnings, ()
         except BackendUnavailableError as exc:
             warnings.append(f"{self.table_backend.name}: {exc.details.message}")
-        except (InvalidDocumentError, ProcessingError) as exc:
+            return (
+                None,
+                warnings,
+                (
+                    ReviewFlag.MISSING_BACKEND,
+                    ReviewFlag.CAPABILITY_UNAVAILABLE,
+                    ReviewFlag.TABLE_STRUCTURE_UNCERTAIN,
+                ),
+            )
+        except OcrPlatformError as exc:
             warnings.append(f"{self.table_backend.name}: {exc.details.message}")
-        return None, warnings
+            return (
+                None,
+                warnings,
+                (ReviewFlag.BACKEND_FAILURE, ReviewFlag.TABLE_STRUCTURE_UNCERTAIN),
+            )
+        except Exception as exc:
+            warnings.append(
+                f"{self.table_backend.name}: table extraction failed ({type(exc).__name__})"
+            )
+            return (
+                None,
+                warnings,
+                (ReviewFlag.BACKEND_FAILURE, ReviewFlag.TABLE_STRUCTURE_UNCERTAIN),
+            )
+
+    def _table_preprocess_variant(self, region: OcrRegion) -> str:
+        """Choose one bounded crop scale for tiny table regions.
+
+        Table structure extraction receives the same local crop mapping as
+        printed OCR.  Only tiny regions use an upscale, and the first
+        configured candidate keeps the table route deterministic and bounded.
+        """
+        if not region.tiny_text:
+            return "source-render"
+        scale = next(
+            (
+                candidate
+                for candidate in self.settings.region_scale_candidates
+                if candidate > 1 and candidate <= self.settings.max_region_scale
+            ),
+            None,
+        )
+        return f"region-scale-{scale}" if scale is not None else "source-render"
 
     def _recognize_region(
         self,
@@ -1378,6 +1451,7 @@ class DocumentPipeline:
             region_scale=result.region_scale,
             preprocess_variant=result.preprocess_variant,
             confidence_scale=result.confidence_scale,
+            backend_family=result.backend_family,
             configuration_hash=self.settings.configuration_hash,
             runtime_metadata=dict(result.runtime_metadata),
             warnings=list(result.warnings),
@@ -1447,6 +1521,7 @@ class DocumentPipeline:
                 for index, attempt in enumerate(attempts)
             ]
             flags = list(outcome.flags)
+            flags.extend(result.review_flags)
             if result.warnings:
                 flags.append(ReviewFlag.MANUAL_REVIEW)
             cells.append(
@@ -1457,10 +1532,10 @@ class DocumentPipeline:
                     raw_text=selected.raw_text,
                     normalized_text=selected.normalized_text or normalized_text,
                     bbox=BoundingBox(
-                        x0=max(0.0, cell.bbox[0]),
-                        y0=max(0.0, cell.bbox[1]),
-                        x1=max(0.0, cell.bbox[2]),
-                        y1=max(0.0, cell.bbox[3]),
+                        x0=cell.bbox[0],
+                        y0=cell.bbox[1],
+                        x1=cell.bbox[2],
+                        y1=cell.bbox[3],
                     ),
                     polygon=list(cell.polygon) if cell.polygon else None,
                     confidence=selected.confidence,
@@ -1485,6 +1560,7 @@ class DocumentPipeline:
             block_flags.append(ReviewFlag.TABLE_STRUCTURE_UNCERTAIN)
         if result.warnings:
             block_flags.append(ReviewFlag.MANUAL_REVIEW)
+        block_flags.extend(result.review_flags)
         block_flags.extend(flag for cell in cells for flag in cell.uncertainty_flags)
         block_flags = list(dict.fromkeys(block_flags))
         block = Block(

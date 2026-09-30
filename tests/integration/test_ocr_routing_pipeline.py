@@ -144,6 +144,78 @@ class TableBackend:
         )
 
 
+class EmptyTableBackend(TableBackend):
+    name = "empty-table-test"
+
+    def extract(self, image_bytes: bytes, *, region: OcrRegion) -> TableResult:
+        return TableResult(
+            backend=self.name,
+            model=self.model,
+            model_version=self.model_version,
+            confidence_scale=self.confidence_scale,
+        )
+
+
+class FailingTableBackend(TableBackend):
+    name = "failing-table-test"
+
+    def extract(self, image_bytes: bytes, *, region: OcrRegion) -> TableResult:
+        raise ProcessingError("table provider timed out", retryable=True)
+
+
+class MalformedTableBackend(TableBackend):
+    name = "malformed-table-test"
+
+    def extract(self, image_bytes: bytes, *, region: OcrRegion) -> TableResult:
+        return TableResult(
+            backend=self.name,
+            model=self.model,
+            model_version=self.model_version,
+            confidence_scale=self.confidence_scale,
+            cells=(
+                TableCell(
+                    row=0,
+                    column=0,
+                    text="valid",
+                    bbox=(5.0, 5.0, 80.0, 25.0),
+                    confidence=0.95,
+                ),
+                TableCell(
+                    row=0,
+                    column=1,
+                    text="outside",
+                    bbox=(80.0, 5.0, 400.0, 25.0),
+                    confidence=0.90,
+                ),
+            ),
+        )
+
+
+class ScaledTableBackend(TableBackend):
+    name = "scaled-table-test"
+
+    def __init__(self) -> None:
+        self.received_region: OcrRegion | None = None
+
+    def extract(self, image_bytes: bytes, *, region: OcrRegion) -> TableResult:
+        self.received_region = region
+        return TableResult(
+            backend=self.name,
+            model=self.model,
+            model_version=self.model_version,
+            confidence_scale=self.confidence_scale,
+            cells=(
+                TableCell(
+                    row=0,
+                    column=0,
+                    text="scaled",
+                    bbox=(20.0, 20.0, 100.0, 60.0),
+                    confidence=0.95,
+                ),
+            ),
+        )
+
+
 class FailingPrintedBackend(PrintedBackend):
     name = "failing-printed-test"
 
@@ -272,6 +344,128 @@ def test_table_backend_unavailable_preserves_text_with_review_flags(tmp_path: Pa
     assert block.needs_review is True
     assert ReviewFlag.TABLE_STRUCTURE_UNCERTAIN in block.uncertainty_flags
     assert any("preserving text OCR" in warning for warning in document.warnings)
+
+
+def test_empty_table_result_falls_back_to_printed_ocr(tmp_path: Path) -> None:
+    source_path = tmp_path / "empty-table.png"
+    Image.new("RGB", (300, 180), "white").save(source_path, format="PNG")
+    table_region = LayoutRegion(
+        bbox=(0.0, 0.0, 300.0, 180.0),
+        block_type=BlockType.TABLE,
+        confidence=0.95,
+        reading_order=0,
+        route_hint=RegionRouteHint.TABLE,
+        text_type=TextType.PRINTED,
+    )
+    settings = Settings(environment="test", storage_root=tmp_path / "artifacts", max_retries=0)
+    document = DocumentPipeline(
+        settings,
+        backends=(PrintedBackend(),),
+        table_backend=EmptyTableBackend(),
+        layout_service=FixedLayoutService((table_region,)),
+    ).process_path(source_path, filename="empty-table.png", declared_content_type="image/png")
+
+    block = document.pages[0].blocks[0]
+    assert block.table_cells == []
+    assert block.lines[0].raw_text == "شماره ABC123"
+    assert block.needs_review is True
+    assert ReviewFlag.TABLE_STRUCTURE_UNCERTAIN in block.uncertainty_flags
+    assert any("empty_result" in warning for warning in document.warnings)
+
+
+def test_failed_table_backend_falls_back_to_printed_ocr(tmp_path: Path) -> None:
+    source_path = tmp_path / "failed-table.png"
+    Image.new("RGB", (300, 180), "white").save(source_path, format="PNG")
+    table_region = LayoutRegion(
+        bbox=(0.0, 0.0, 300.0, 180.0),
+        block_type=BlockType.TABLE,
+        confidence=0.95,
+        reading_order=0,
+        route_hint=RegionRouteHint.TABLE,
+        text_type=TextType.PRINTED,
+    )
+    settings = Settings(environment="test", storage_root=tmp_path / "artifacts", max_retries=0)
+    document = DocumentPipeline(
+        settings,
+        backends=(PrintedBackend(),),
+        table_backend=FailingTableBackend(),
+        layout_service=FixedLayoutService((table_region,)),
+    ).process_path(source_path, filename="failed-table.png", declared_content_type="image/png")
+
+    block = document.pages[0].blocks[0]
+    assert block.lines[0].raw_text == "شماره ABC123"
+    assert ReviewFlag.BACKEND_FAILURE in block.uncertainty_flags
+    assert ReviewFlag.TABLE_STRUCTURE_UNCERTAIN in block.uncertainty_flags
+    assert any("table provider timed out" in warning for warning in document.warnings)
+
+
+def test_malformed_table_cells_are_rejected_and_flagged_without_corrupting_valid_cells(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "malformed-table.png"
+    Image.new("RGB", (300, 180), "white").save(source_path, format="PNG")
+    table_region = LayoutRegion(
+        bbox=(0.0, 0.0, 300.0, 180.0),
+        block_type=BlockType.TABLE,
+        confidence=0.95,
+        reading_order=0,
+        route_hint=RegionRouteHint.TABLE,
+        text_type=TextType.PRINTED,
+    )
+    settings = Settings(environment="test", storage_root=tmp_path / "artifacts", max_retries=0)
+    document = DocumentPipeline(
+        settings,
+        backends=(PrintedBackend(),),
+        table_backend=MalformedTableBackend(),
+        layout_service=FixedLayoutService((table_region,)),
+    ).process_path(
+        source_path,
+        filename="malformed-table.png",
+        declared_content_type="image/png",
+    )
+
+    block = document.pages[0].blocks[0]
+    assert [cell.raw_text for cell in block.table_cells] == ["valid"]
+    assert block.lines == []
+    assert block.needs_review is True
+    assert ReviewFlag.INVALID_GEOMETRY in block.uncertainty_flags
+    assert ReviewFlag.TABLE_STRUCTURE_UNCERTAIN in block.uncertainty_flags
+    assert any("outside table region" in warning for warning in document.warnings)
+
+
+def test_tiny_table_region_uses_bounded_scale_and_maps_cells_to_page_coordinates(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "scaled-table.png"
+    Image.new("RGB", (300, 180), "white").save(source_path, format="PNG")
+    table_region = LayoutRegion(
+        bbox=(50.0, 20.0, 250.0, 120.0),
+        block_type=BlockType.TABLE,
+        confidence=0.95,
+        reading_order=0,
+        route_hint=RegionRouteHint.TABLE,
+        text_type=TextType.PRINTED,
+        tiny_text=True,
+    )
+    table_backend = ScaledTableBackend()
+    settings = Settings(environment="test", storage_root=tmp_path / "artifacts", max_retries=0)
+    document = DocumentPipeline(
+        settings,
+        backends=(PrintedBackend(),),
+        table_backend=table_backend,
+        layout_service=FixedLayoutService((table_region,)),
+    ).process_path(
+        source_path,
+        filename="scaled-table.png",
+        declared_content_type="image/png",
+    )
+
+    cell = document.pages[0].blocks[0].table_cells[0]
+    assert table_backend.received_region is not None
+    assert table_backend.received_region.bbox == (0.0, 0.0, 400.0, 200.0)
+    assert cell.bbox.as_list() == [60.0, 30.0, 100.0, 50.0]
+    assert cell.extraction.region_scale == 2
+    assert cell.extraction.preprocess_variant == "region-scale-2"
 
 
 def test_printed_backend_failure_is_preserved_as_review_warning(tmp_path: Path) -> None:

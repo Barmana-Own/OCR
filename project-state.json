@@ -112,6 +112,9 @@
       "src/ocr_platform/ocr/routing/region_router.py",
       "src/ocr_platform/handwriting/backends.py",
       "src/ocr_platform/tables/ports.py",
+      "src/ocr_platform/tables/paddle.py",
+      "src/ocr_platform/tables/validation.py",
+      "src/ocr_platform/tables/__init__.py",
       "src/ocr_platform/pipeline.py",
       "src/ocr_platform/config/settings.py",
       "tests/ocr/test_contracts.py",
@@ -436,6 +439,9 @@
       "src/ocr_platform/ocr/routing/region_router.py",
       "src/ocr_platform/handwriting/backends.py",
       "src/ocr_platform/tables/ports.py",
+      "src/ocr_platform/tables/paddle.py",
+      "src/ocr_platform/tables/validation.py",
+      "src/ocr_platform/tables/__init__.py",
       "src/ocr_platform/domain/models.py",
       "src/ocr_platform/pipeline.py",
       "tests/ocr/test_contracts.py",
@@ -443,7 +449,9 @@
       "tests/ocr/test_region_router.py",
       "tests/domain/test_phase6_models.py",
       "tests/config/test_phase6_settings.py",
-      "tests/integration/test_ocr_routing_pipeline.py"
+      "tests/integration/test_ocr_routing_pipeline.py",
+      "tests/tables/test_table_backend.py",
+      "tests/dataset/test_phase8_export.py"
     ],
     "limitations": [
       "No production HTR or table-cell model is installed; unavailable adapters fail explicitly and never fabricate text.",
@@ -464,6 +472,46 @@
     {"command": "OCR/HTR/table model smoke", "status": "NOT_RUN", "evidence": "external model runtimes/weights are not available in the current environment"},
     {"command": "docker build/smoke", "status": "NOT_RUN", "evidence": "Docker daemon unavailable"}
   ],
+  "task_02_table_extraction": {
+    "status": "PASS",
+    "objective": "Real optional table extraction with safe printed-text fallback",
+    "artifacts": [
+      "src/ocr_platform/tables/paddle.py",
+      "src/ocr_platform/tables/ports.py",
+      "src/ocr_platform/tables/validation.py",
+      "src/ocr_platform/tables/__init__.py",
+      "src/ocr_platform/pipeline.py",
+      "src/ocr_platform/dataset/exporter.py",
+      "tests/tables/test_table_backend.py",
+      "tests/integration/test_ocr_routing_pipeline.py",
+      "tests/dataset/test_phase8_export.py",
+      "docs/phase6-ocr-routing.md",
+      ".env.example"
+    ],
+    "decisions": [
+      "PP-Structure remains an optional lazy adapter selected through provider aliases; the base import path never imports Paddle runtime code.",
+      "Table cells are validated in local prepared-crop coordinates before page mapping; invalid structure is dropped and surfaced through warnings/review flags.",
+      "Unavailable, failed, empty, and unusable table extraction falls back to printed OCR while preserving table-structure uncertainty and never inventing row/column structure.",
+      "Usable structured cells remain canonical and are not silently merged with a duplicate printed OCR transcript; text export uses deterministic row-then-column order."
+    ],
+    "validation": [
+      {"command": "PYTHONPATH=src pytest -q", "status": "PASS", "evidence": "254 passed, 1 optional model test skipped, 2 dependency deprecation warnings"},
+      {"command": "python -m compileall -q src tests", "status": "PASS", "evidence": "no syntax errors"},
+      {"command": "ruff check src tests", "status": "PASS", "evidence": "no findings"},
+      {"command": "python -m pip check", "status": "PASS", "evidence": "No broken requirements found"},
+      {"command": "python -m build --no-isolation", "status": "PASS", "evidence": "sdist and wheel include table validation and Paddle adapter modules"},
+      {"command": "docker compose config", "status": "PASS", "evidence": "compose configuration parsed successfully"},
+      {"command": "base import smoke", "status": "PASS", "evidence": "ocr_platform and ocr_platform.tables import without Paddle runtime"},
+      {"command": "static type checker", "status": "NOT_RUN", "evidence": "mypy and pyright are not installed"},
+      {"command": "pip-audit", "status": "NOT_RUN", "evidence": "tool is not installed"},
+      {"command": "real Paddle table model smoke", "status": "NOT_RUN", "evidence": "requires OCR_RUN_MODEL_TESTS=1, a local OCR_TABLE_MODEL_PATH, and installed Paddle runtime"}
+    ],
+    "limitations": [
+      "Actual PP-Structure recognition quality and current provider model output require a licensed local Paddle runtime/model and labeled fixtures.",
+      "The safe fallback preserves printed text but cannot recover table row/column semantics when structure extraction is unavailable.",
+      "No production table-cell model is installed in the current environment."
+    ]
+  },
   "phase_7_verification": {
     "status": "PASS",
     "objective": "Verification, confidence policy, retry logic, and uncertainty",

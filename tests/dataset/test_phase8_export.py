@@ -164,6 +164,93 @@ def test_default_and_all_policies_handle_review_table_cells_safely(tmp_path: Pat
     assert all_page["page"]["blocks"][0]["table_cells"][0]["needs_review"] is True
 
 
+def test_table_exports_are_row_column_deterministic_and_preserve_cell_metadata(
+    tmp_path: Path,
+) -> None:
+    source_path = _source(tmp_path, "table-export.png")
+    settings = Settings(environment="test", storage_root=tmp_path / "artifacts")
+    pipeline = DocumentPipeline(settings, backends=(DeterministicBackend(),))
+    document = pipeline.process_path(
+        source_path,
+        filename="table-export.png",
+        declared_content_type="image/png",
+    )
+    source_line = document.pages[0].blocks[0].lines[0]
+    cells = [
+        TableCellResult(
+            id="cell-1-0",
+            row=1,
+            column=0,
+            raw_text="late",
+            normalized_text="late-normalized",
+            bbox=source_line.bbox,
+            confidence=0.96,
+            reading_order=2,
+            source=source_line.source,
+            extraction=source_line.extraction,
+        ),
+        TableCellResult(
+            id="cell-0-1",
+            row=0,
+            column=1,
+            raw_text="Alice",
+            normalized_text="Alice",
+            bbox=source_line.bbox,
+            confidence=0.96,
+            reading_order=1,
+            source=source_line.source,
+            extraction=source_line.extraction,
+        ),
+        TableCellResult(
+            id="cell-0-0",
+            row=0,
+            column=0,
+            raw_text="شماره ١٢٣",
+            normalized_text="شماره ۱۲۳",
+            bbox=source_line.bbox,
+            confidence=0.96,
+            reading_order=0,
+            source=source_line.source,
+            extraction=source_line.extraction,
+        ),
+    ]
+    table_block = document.pages[0].blocks[0].model_copy(
+        update={
+            "block_type": BlockType.TABLE,
+            "lines": [],
+            "table_cells": cells,
+            "needs_review": False,
+            "verification_status": VerificationStatus.ACCEPTED,
+        }
+    )
+    table_page = document.pages[0].model_copy(update={"blocks": [table_block]})
+    table_document = document.model_copy(update={"pages": [table_page]})
+
+    exported = DatasetExporter(pipeline.store).export(
+        table_document,
+        tmp_path / "exports",
+        formats=("txt", "md", "pages"),
+    )
+    text = (exported.root / "document.txt").read_text(encoding="utf-8")
+    markdown = (exported.root / "document.md").read_text(encoding="utf-8")
+    page_payload = json.loads(
+        (exported.root / "pages" / "page_0001" / "page.json").read_text(encoding="utf-8")
+    )
+
+    assert "شماره ١٢٣ | Alice\nlate" in text
+    assert "| Row | Column | Raw Text | Normalized Text |" in markdown
+    assert "شماره ١٢٣" in markdown
+    assert "شماره ۱۲۳" in markdown
+    assert source_line.extraction.backend in markdown
+    exported_cells = page_payload["page"]["blocks"][0]["table_cells"]
+    assert [(cell["row"], cell["column"]) for cell in exported_cells] == [
+        (1, 0),
+        (0, 1),
+        (0, 0),
+    ]
+    assert exported_cells[0]["extraction"]["model"] == source_line.extraction.model
+
+
 def test_strict_verified_only_excludes_same_backend_retry_result(tmp_path: Path) -> None:
     source_path = _source(tmp_path)
     backend = LowConfidenceRetryBackend()

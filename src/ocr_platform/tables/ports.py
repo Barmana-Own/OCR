@@ -5,13 +5,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from ocr_platform.domain import ExtractionMethod, PolygonPoint
+from ocr_platform.domain import ExtractionMethod, PolygonPoint, ReviewFlag
 from ocr_platform.errors import BackendUnavailableError
 from ocr_platform.ocr.models import OcrRegion
 
 
 @dataclass(frozen=True)
 class TableCell:
+    """Provider-neutral zero-based table-cell evidence.
+
+    ``row`` and ``column`` are zero-based addresses.  ``bbox`` and ``polygon``
+    use the top-left-origin pixel coordinate system of the image passed to the
+    backend; the pipeline maps them back to the canonical page coordinates.
+    """
+
     row: int
     column: int
     text: str
@@ -36,7 +43,14 @@ class TableCellCandidate:
 
 @dataclass(frozen=True)
 class TableResult:
-    """Structured table evidence returned by a table adapter."""
+    """Structured table evidence returned by a table adapter.
+
+    Cell geometry is local to the OCR region until the pipeline applies its
+    recorded crop/scale mapping.  Empty or malformed provider output is not a
+    successful extraction; callers must validate ``cells`` before assembly.
+    ``review_flags`` records structural validation concerns without changing
+    the provider's raw warning text.
+    """
 
     backend: str
     model: str
@@ -50,6 +64,7 @@ class TableResult:
     runtime_metadata: tuple[tuple[str, str], ...] = ()
     warnings: tuple[str, ...] = ()
     backend_family: str = "unknown"
+    review_flags: tuple[ReviewFlag, ...] = ()
 
 
 class TableExtractionBackend(Protocol):
@@ -91,7 +106,16 @@ def build_table_backend(
     normalized = name.strip().lower()
     if normalized in {"", "unavailable", "none"}:
         return UnavailableTableBackend("table extraction backend is not configured")
-    if normalized in {"pp_structure", "paddle", "paddle_table"}:
+    if normalized in {
+        "pp_structure",
+        "ppstructure",
+        "pp-structure",
+        "paddle",
+        "paddle_table",
+        "paddle-table",
+        "paddle_structure",
+        "paddle-structure",
+    }:
         from .paddle import PaddleStructureTableBackend
 
         return PaddleStructureTableBackend(

@@ -263,22 +263,26 @@ class DatasetExporter:
                 content.extend([f"### Block {block.id} ({block.block_type.value})", ""])
                 if block.table_cells:
                     content.extend(
-                        ["| Row | Column | Text | Status |", "| ---: | ---: | --- | --- |"]
+                        [
+                            "| Row | Column | Raw Text | Normalized Text | Status | Review | "
+                            "BBox | Backend | Model | Model Version |",
+                            "| ---: | ---: | --- | --- | --- | --- | --- | --- | --- | --- |",
+                        ]
                     )
                     for cell in sorted(block.table_cells, key=lambda item: (item.row, item.column)):
                         if cls._eligible(cell, policy):
-                            text = cls._escape_markdown(
-                                cell.corrected_text or cell.raw_text
+                            bbox = cls._escape_markdown(
+                                json.dumps(cell.bbox.as_list(), separators=(",", ":"))
                             )
-                            if policy is DatasetExportPolicy.ALL_WITH_STATUS:
-                                status_label = cls._status_label(
-                                    cell.verification_status,
-                                    cell.needs_review,
-                                )
-                                text = f"[{status_label}] {text}"
                             content.append(
-                                f"| {cell.row} | {cell.column} | {text} | "
-                                f"{cell.verification_status.value} |"
+                                f"| {cell.row} | {cell.column} | "
+                                f"{cls._escape_markdown(cell.raw_text)} | "
+                                f"{cls._escape_markdown(cell.normalized_text)} | "
+                                f"{cell.verification_status.value} | "
+                                f"{str(cell.needs_review).lower()} | {bbox} | "
+                                f"{cls._escape_markdown(cell.extraction.backend)} | "
+                                f"{cls._escape_markdown(cell.extraction.model)} | "
+                                f"{cls._escape_markdown(cell.extraction.model_version)} |"
                             )
                     content.append("")
                     continue
