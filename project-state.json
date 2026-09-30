@@ -964,8 +964,8 @@
   },
   "task_04_paddle_printed_ocr": {
     "status": "PASS",
-    "commit": "pending",
-    "remote": "pending",
+    "commit": "fef5c5e",
+    "remote": "origin/main",
     "objective": "Independent optional PaddleOCR printed-text backend with explicit language mapping, bounded lifecycle, provenance, and verification-safe evidence",
     "artifacts": [
       "src/ocr_platform/ocr/backends/paddle_adapter.py",
