@@ -115,7 +115,7 @@ The following workstreams are implemented in the existing modular monolith. Adap
 | Routing and failure safety | PASS — HTR regions prefer HTR; unavailable/failing HTR produces typed errors and review flags; opt-in printed fallback is labeled and cannot become clean handwriting ground truth |
 | Regression coverage | PASS — 22 targeted tests passed with the opt-in model smoke skipped; full suite passed with 263 tests and 2 model skips |
 
-Task 03 was committed at `6a8e777`. A real HTR/GPU model smoke was not run because no permitted model weights or GPU runtime were available. No handwriting accuracy or Persian handwriting support claim is made.
+Task 03 implementation was committed at `6a8e777`; the implementation and evidence commits were pushed to `origin/main` through `98a9e79`. A real HTR/GPU model smoke was not run because no permitted model weights or GPU runtime were available. No handwriting accuracy or Persian handwriting support claim is made.
 
 ## Task 01 verification and export safety evidence
 

@@ -911,6 +911,8 @@
   "task_03_handwriting_htr": {
     "status": "PASS",
     "commit": "6a8e777",
+    "evidence_commit": "98a9e79",
+    "remote": "origin/main",
     "objective": "Configurable provider-neutral handwriting recognition with fail-closed capability handling and provenance-preserving routing",
     "artifacts": [
       "src/ocr_platform/handwriting/transformers.py",
