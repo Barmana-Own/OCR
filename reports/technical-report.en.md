@@ -9,6 +9,7 @@
 | Gregorian date | 2026-09-30 |
 | Release | 0.1.0 incremental implementation program |
 | Repository | `E:\OCR` |
+| Repository revision | `12e0a5a` |
 | Delivery status | Incremental implementation integrated; external model and infrastructure validation remains pending |
 
 ## Scope and architecture
