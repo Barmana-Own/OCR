@@ -9,8 +9,8 @@
 | Gregorian date | 2026-09-30 |
 | Release | 0.1.0 incremental implementation program |
 | Repository | `E:\OCR` |
-| Repository revision | `86267f9` (Task 02 implementation checkpoint) |
-| Delivery status | Incremental implementation integrated; Task 01 verification/export safety and Task 02 table extraction/fallback are implemented; external model and infrastructure validation remains pending |
+| Repository revision | `6a8e777` (Task 03 HTR implementation checkpoint) |
+| Delivery status | Incremental implementation integrated through configurable HTR; external model, GPU, and infrastructure validation remains pending |
 
 ## Scope and architecture
 
@@ -32,6 +32,9 @@ The canonical hierarchy is `Document -> Page -> Block -> Line -> Word`. Raw and 
 - Table extraction now has a real optional lazy PP-Structure adapter with `paddle`, `paddle-table`, and `ppstructure` aliases. Provider cells are validated in local crop coordinates, retain row/column/raw/normalized/provenance data, and map safely through non-origin and tiny-text scaled crops.
 - Table backend absence, failure, timeout, empty output, or unusable structure triggers printed OCR fallback with explicit table-structure review flags; fallback text is never presented as structured cells.
 - Markdown table export retains raw and normalized text, row/column, review state, bounding box, and backend/model/version; plain text is deterministic row-then-column order.
+- Handwriting routing now has a real lazy Transformers/TrOCR-style adapter selected by model ID or local path, with bounded generation, local-only and remote-code-safe defaults, typed capability failures, and explicit provenance.
+- HTR preserves generated raw text, configured language/script metadata, model revision, runtime parameters, crop geometry, and an explicit uncalibrated confidence state; Persian/Arabic handwriting capability is not claimed without a validated model and benchmark.
+- HTR failure remains review-required. Printed OCR fallback is optional, explicitly labeled as fallback, and is never treated as handwriting ground truth or independent verification evidence.
 - Quality hooks cover CER, WER, confidence, disagreement, IoU line detection precision/recall, reading order, exact-match field/cell text, review rate, and tiny-text recovery.
 - API boundaries provide request correlation, streaming upload limits, typed auth errors, safe error envelopes, health/readiness, and production/staging auth fail-closed configuration.
 - Security hardening covers path traversal, source immutability, bounded resources, subprocess argument safety, redaction, secret-pattern review, and regression tests.
@@ -85,7 +88,7 @@ The following workstreams are implemented in the existing modular monolith. Adap
 
 | Check | Result |
 |---|---|
-| PYTHONPATH=src pytest -q | PASS — 242 passed; two dependency deprecation warnings |
+| PYTHONPATH=src pytest -q | PASS — 263 passed, 2 skipped; two dependency deprecation warnings |
 | python -m compileall -q src tests | PASS |
 | ruff check src tests scripts | PASS |
 | python -m pip check | PASS |
@@ -100,6 +103,19 @@ The following workstreams are implemented in the existing modular monolith. Adap
 | Static type checker | NOT_RUN — no configured checker was available |
 | Docker build and runtime smoke | NOT_RUN — Docker daemon unavailable |
 | External deployment | NOT_PERFORMED — no target or credentials authorized |
+
+## Task 03 configurable handwriting recognition evidence
+
+| Requirement | Result |
+|---|---|
+| Configurable provider-neutral HTR adapter | PASS — `TransformersHandwritingBackend` accepts model ID/local path, processor ID, revision, device, cache, generation, image, and timeout settings without exposing provider objects to the domain layer |
+| Optional dependency and no model download in standard tests | PASS — Torch/Transformers imports are lazy, the `htr` extra includes `sentencepiece`, local-files-only defaults to true, and the base-import smoke confirms both optional modules remain unloaded |
+| Honest capability declaration | PASS — configured language/script are metadata only; no Persian/Arabic capability claim is made without a validated model; model revision and confidence scale are explicit |
+| Provenance and confidence handling | PASS — raw generated text, crop geometry, DPI/scale, preprocessing variant, model/revision, runtime parameters, and `confidence=None` with `uncalibrated_none` are preserved |
+| Routing and failure safety | PASS — HTR regions prefer HTR; unavailable/failing HTR produces typed errors and review flags; opt-in printed fallback is labeled and cannot become clean handwriting ground truth |
+| Regression coverage | PASS — 22 targeted tests passed with the opt-in model smoke skipped; full suite passed with 263 tests and 2 model skips |
+
+Task 03 was committed at `6a8e777`. A real HTR/GPU model smoke was not run because no permitted model weights or GPU runtime were available. No handwriting accuracy or Persian handwriting support claim is made.
 
 ## Task 01 verification and export safety evidence
 

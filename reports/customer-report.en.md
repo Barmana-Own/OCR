@@ -8,7 +8,7 @@
 | Jalali date | 1405-07-08 |
 | Gregorian date | 2026-09-30 |
 | Release | 0.1.0 incremental implementation program |
-| Delivery status | Program implementation integrated; verification/export safety hardening pushed; external model and infrastructure validation remains pending |
+| Delivery status | Program implementation integrated through configurable HTR; external model and infrastructure validation remains pending |
 
 ## Executive summary
 
@@ -18,7 +18,7 @@ The incremental implementation program extends the existing auditable OCR founda
 
 - Native-first PDF extraction remains in place, and validated native readers now cover DOCX, XLSX, optional legacy XLS, PPTX, UTF-8 TXT, CSV, JSON, and HTML.
 - Office container signatures and members are checked before native extraction; embedded visual regions retain an explicit OCR/rendering requirement.
-- PaddleOCR, PP-Structure, local-only Transformers HTR, PostgreSQL, S3-compatible storage, and Redis queue integrations are isolated behind optional adapters.
+- PaddleOCR, PP-Structure, configurable local-only Transformers HTR, PostgreSQL, S3-compatible storage, and Redis queue integrations are isolated behind optional adapters. HTR model choice, processor, revision, device, generation bound, and language/script metadata are configurable.
 - Table regions preserve printed OCR text when structure extraction is unavailable and emit explicit capability/review warnings; optional PP-Structure cells are validated, mapped from scaled crops, and exported with row/column and provenance metadata.
 - Named preprocessing profiles are selected by the primary OCR path, with DPI, scale, and coordinate mapping retained for tiny-text variants.
 - Verification distinguishes backend family/name, model, and model version evidence identities; same-engine preprocessing variants are recorded as stability only and cannot create false independent consensus.
@@ -29,11 +29,11 @@ The incremental implementation program extends the existing auditable OCR founda
 
 ## Quality and security status
 
-The automated suite passed 254 tests; one optional model smoke test was skipped by configuration, with two dependency deprecation warnings. Ruff, compilation, dependency consistency, package build, Compose configuration, base-import, and the repository OpenAPI checks passed. No model accuracy claim was made: real OCR/HTR/table quality still requires permitted ground truth and installed runtimes.
+The automated suite passed 263 tests; two optional model smoke tests were skipped by configuration, with two dependency deprecation warnings. Ruff, compilation, dependency consistency, package build, Compose configuration, base-import, and the repository OpenAPI checks passed. HTR failures remain explicitly review-required, and no handwriting or model accuracy claim was made: real OCR/HTR/table quality still requires permitted ground truth and installed runtimes.
 
 ## Production status and limitations
 
-No external deployment was made. Production validation still requires selected licensed OCR/layout/handwriting/table model binaries, permitted labeled ground truth, secret-manager and gateway configuration, live PostgreSQL/S3/Redis checks where selected, queue recovery validation, Docker runtime smoke tests, and external security/dependency scans. These checks are not represented as completed by this report.
+No external deployment was made. Production validation still requires selected licensed OCR/layout/handwriting/table model binaries, a configured HTR model with language coverage evidence, permitted labeled ground truth, secret-manager and gateway configuration, live PostgreSQL/S3/Redis checks where selected, queue recovery validation, Docker runtime smoke tests, and external security/dependency scans. These checks are not represented as completed by this report.
 
 ## Handover
 

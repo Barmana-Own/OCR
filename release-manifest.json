@@ -18,7 +18,7 @@
     "layout": "Pillow projection fallback with optional PaddleOCR PP-Structure adapter",
     "ocr_routing": "provider-neutral printed OCR, handwriting, table, and mixed-form routing",
     "printed_ocr": "Tesseract adapter with configurable fas+eng language bundle and bounded timeout",
-    "handwriting": "explicit unavailable adapter until a production HTR runtime is deployed",
+    "handwriting": "configurable lazy Transformers HTR adapter with local-only default, bounded generation, and explicit unavailable capability when runtime/model is absent",
     "tables": "structured TableResult/TableCell contract with explicit unavailable adapter",
     "verification": "backend-aware scoring, bounded retries, consensus, uncertainty reason codes, and immutable review artifacts",
     "normalization": "versioned configurable Persian/mixed-script policy with raw-text preservation and protected identifiers",
@@ -45,7 +45,7 @@
     "local_adapters": ["src/ocr_platform/database/local.py"]
   },
   "validation": {
-    "tests": "PASS: 235 passed; 2 dependency deprecation warnings",
+    "tests": "PASS: 263 passed; 2 skipped model tests; 2 dependency deprecation warnings",
     "coverage": "PASS: 86% total; 2 dependency deprecation warnings",
     "lint": "PASS",
     "compile": "PASS",
@@ -61,7 +61,7 @@
     "real_ocr_smoke": "NOT_RUN: OCR executable/model weights unavailable",
     "docker_smoke": "NOT_RUN: Docker daemon unavailable",
     "external_deployment": "NOT_PERFORMED: no authorized target",
-    "phase7_model_and_provider_smoke": "NOT_RUN: external OCR/HTR/table runtimes and weights are unavailable",
+    "phase7_model_and_provider_smoke": "NOT_RUN: external OCR/HTR/table runtimes and weights are unavailable; HTR adapter contract and mocked routing tests passed",
     "phase8_export_policy_tests": "PASS: policy filtering, explicit review partitions, page manifests, crop mapping, and provenance counts",
     "phase8_normalization_tests": "PASS: raw preservation, mixed Persian/English normalization, protected tokens, and environment validation",
     "phase9_api_tests": "PASS: upload validation, job lifecycle/failure/warnings, repository round trips, page-image/manifest/export retrieval, mode configuration, idempotent replay/conflict, malformed resource-id handling, and programmatic filename traversal rejection",
@@ -272,7 +272,7 @@
       "pip_audit_and_static_type_check"
     ],
     "validation": {
-      "tests": "PASS: 235 passed; 2 dependency deprecation warnings",
+      "tests": "PASS: 263 passed; 2 model tests skipped; 2 dependency deprecation warnings",
       "compileall": "PASS: python -m compileall -q src tests",
       "ruff": "PASS: ruff check src tests scripts",
       "pip_check": "PASS: python -m pip check",
@@ -286,8 +286,8 @@
     "truthfulness_note": "No OCR accuracy or handwriting-quality claim is made without permitted ground truth and installed model runtimes."
   },
   "known_non_blocking_issues": [
-    "The default Pillow layout detector is conservative; handwriting/formula/form/table-cell semantics require a deployed model adapter.",
-    "HTR and table-cell adapters are intentionally unavailable by default until production model runtimes, weights, licensing, and benchmark labels are supplied.",
+    "The default Pillow layout detector is conservative; handwriting/formula/form/table-cell semantics require deployed model adapters.",
+    "The HTR adapter is implemented but remains unavailable by default until a configured production model runtime, weights, licensing, and benchmark labels are supplied; Persian/Arabic capability is not claimed without validation.",
     "Tesseract printed OCR is a real adapter, but Persian traineddata and recognition quality require deployment smoke tests and labeled benchmarks.",
     "Gateway rate limiting, secret-manager rotation, shared durable storage adapters, distributed queue/restart recovery, load testing, backup restore verification, and advisory scanning require target infrastructure.",
     "The local in-process worker persists page checkpoints but does not reclaim queued jobs after process restart; use a shared queue/worker adapter before multi-instance public deployment.",

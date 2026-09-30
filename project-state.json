@@ -153,7 +153,7 @@
     "Complex reading order for mixed RTL/multi-column pages is heuristic without a deployed layout model.",
     "Compressed PDFs may still require operational CPU/time quotas beyond page/pixel limits; processing timeout enforcement remains an application-worker concern.",
     "Multipage raster containers and advanced capture-quality signals are not yet expanded in ingestion.",
-    "Production HTR and table-cell model runtimes are not installed in the current environment; default adapters fail closed and require review.",
+    "The configurable HTR adapter and table-cell adapter are present, but their production runtimes and model weights are not installed in the current environment; capability checks fail closed and require review.",
     "The local worker persists page checkpoints but does not reclaim queued work after process restart; a durable shared queue is required for multi-instance recovery."
   ],
   "unresolved_blockers": [],
@@ -875,7 +875,7 @@
       "pip_audit_and_static_type_check"
     ],
     "validation": {
-      "tests": "PASS: 242 passed; 2 dependency deprecation warnings",
+      "tests": "PASS: 263 passed; 2 model tests skipped; 2 dependency deprecation warnings",
       "compileall": "PASS: python -m compileall -q src tests",
       "ruff": "PASS: ruff check src tests scripts",
       "pip_check": "PASS: python -m pip check",
@@ -906,6 +906,58 @@
     "known_limitations": [
       "Real OCR/HTR/table model smoke and external ground-truth accuracy benchmarks remain not run",
       "Docker runtime, pip-audit, and static type checker remain unavailable in this environment"
+    ]
+  },
+  "task_03_handwriting_htr": {
+    "status": "PASS",
+    "commit": "6a8e777",
+    "objective": "Configurable provider-neutral handwriting recognition with fail-closed capability handling and provenance-preserving routing",
+    "artifacts": [
+      "src/ocr_platform/handwriting/transformers.py",
+      "src/ocr_platform/handwriting/backends.py",
+      "src/ocr_platform/handwriting/ports.py",
+      "src/ocr_platform/config/settings.py",
+      "src/ocr_platform/pipeline.py",
+      "pyproject.toml",
+      ".env.example",
+      "tests/ocr/test_optional_adapters.py",
+      "tests/integration/test_ocr_routing_pipeline.py",
+      "tests/config/test_phase6_settings.py",
+      "docs/phase6-ocr-routing.md",
+      "docs/architecture.md",
+      "docs/processing-flow.md",
+      "docs/phase13-program.md",
+      "README.md"
+    ],
+    "decisions": [
+      "Transformers HTR is a lazy optional adapter selected by configurable model ID or local path; provider objects do not leak into canonical domain models.",
+      "The base installation does not import Torch or Transformers and standard tests never download model weights.",
+      "Local-files-only is the default and trust_remote_code is disabled by default; enabling remote access or remote code is an explicit deployment decision.",
+      "The adapter reports configured language and script metadata only; it makes no Persian or Arabic handwriting capability claim without a validated configured model and benchmark.",
+      "Unavailable or failed HTR is surfaced through typed errors and review flags. Optional printed OCR fallback is explicitly labeled as fallback and cannot be exported as verified handwriting ground truth.",
+      "HTR confidence remains None with an explicit uncalibrated confidence scale when the configured model does not provide a calibrated score."
+    ],
+    "validation": [
+      {"command": "PYTHONPATH=src pytest -q tests/integration/test_ocr_routing_pipeline.py tests/ocr/test_optional_adapters.py tests/config/test_phase6_settings.py", "status": "PASS", "evidence": "22 passed, 1 optional model test skipped"},
+      {"command": "PYTHONPATH=src pytest -q", "status": "PASS", "evidence": "263 passed, 2 skipped, 2 dependency deprecation warnings"},
+      {"command": "python -m compileall -q src tests", "status": "PASS", "evidence": "no syntax errors"},
+      {"command": "ruff check src tests", "status": "PASS", "evidence": "no findings"},
+      {"command": "python -m pip check", "status": "PASS", "evidence": "No broken requirements found"},
+      {"command": "python -m build --no-isolation", "status": "PASS", "evidence": "sdist and wheel built successfully"},
+      {"command": "docker compose config", "status": "PASS", "evidence": "compose configuration parsed successfully"},
+      {"command": "base import smoke", "status": "PASS", "evidence": "ocr_platform imports with transformers_loaded=False and torch_loaded=False"},
+      {"command": "changed-scope security review", "status": "PASS", "evidence": "optional imports are lazy, local-only and remote-code-safe defaults are enforced, resource limits are bounded, errors are typed, and no sensitive OCR content is logged by the HTR adapter"},
+      {"command": "static type checker", "status": "NOT_RUN", "evidence": "mypy and pyright are not configured or installed"},
+      {"command": "pip-audit", "status": "NOT_RUN", "evidence": "tool not installed"},
+      {"command": "real HTR/GPU model smoke", "status": "NOT_RUN", "evidence": "no permitted configured model weights or GPU runtime were available"},
+      {"command": "Docker runtime smoke", "status": "NOT_PERFORMED", "evidence": "Docker daemon was unavailable; Compose syntax was validated"}
+    ],
+    "known_limitations": [
+      "No real HTR model or model weights were executed in this environment, so recognition accuracy is not established.",
+      "Persian/Arabic handwriting support is not claimed until a configured model with that coverage passes an integration benchmark.",
+      "Confidence is intentionally unavailable unless a future backend-specific calibration contract supplies it; the current path remains review-aware.",
+      "Transformers max_time provides cooperative generation bounding; hard process-level termination remains a worker/runtime responsibility.",
+      "Explicitly enabling remote model downloads or remote code requires controlled provisioning, licensing review, and deployment security review."
     ]
   }
 }
